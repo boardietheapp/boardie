@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>boardie — Your Visual Bestie for Storyboards & Moodboards</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-[#0A0A0A] text-[#E5E5E5] antialiased selection:bg-[#9333EA] selection:text-white">
+
+  <!-- Top Navigation -->
+  <nav class="sticky top-0 z-40 bg-[#0A0A0A]/90 backdrop-blur border-b border-[#262626]">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <!-- Custom Brand Logo -->
+      <a href="index.html" class="flex items-center gap-2.5 group">
+        <img 
+          src="./assets/Banner.png" 
+          alt="boardie logo" 
+          class="h-12 w-auto object-contain"
+        />
+      </a>
+
+      <div class="hidden md:flex items-center gap-8 text-sm text-neutral-400">
+        <a href="features.html" class="hover:text-[#E5E5E5] transition">Features</a>
+        <a href="how-it-works.html" class="hover:text-[#E5E5E5] transition">How It Works</a>
+        <a href="pricing.html" class="hover:text-[#E5E5E5] transition">Pricing</a>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="openAuthDrawer('login')" class="text-sm text-neutral-300 hover:text-white px-3 py-2 transition">
+          Log In
+        </button>
+        <button onclick="openAuthDrawer('signup')" class="text-sm font-semibold bg-[#9333EA] hover:bg-[#A855F7] text-white px-4 py-2 rounded-lg transition">
+          Start Free
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section class="studio-grid border-b border-[#262626]">
+    <div class="max-w-6xl mx-auto px-6 py-24 md:py-32 grid md:grid-cols-12 gap-12 items-center">
+      <div class="md:col-span-7 space-y-6">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#171717] border border-[#262626] text-xs text-[#A855F7]">
+          <span class="w-2 h-2 rounded-full bg-[#9333EA]"></span>
+          Built for Filmmakers & Photographers
+        </div>
+
+        <h1 class="font-heading text-6xl md:text-7xl leading-[0.95] text-[#E5E5E5]">
+          YOUR VISUAL BESTIE FOR <span class="text-[#A855F7]">STORYBOARDS</span> & <span class="text-[#34D399]">MOODBOARDS.</span>
+        </h1>
+
+        <p class="text-neutral-400 text-base md:text-lg max-w-xl leading-relaxed">
+          Organize every shoot into dedicated project boards. Map aspect-ratio shot lists, pull color palettes from reference frames, organize columns, and keep production notes on one calm, spatial canvas.
+        </p>
+
+        <div class="flex flex-wrap items-center gap-4 pt-2">
+          <button onclick="openAuthDrawer('signup')" class="bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold px-6 py-3 rounded-xl text-sm transition">
+            Create Your First Board
+          </button>
+          <button onclick="openAuthDrawer('login')" class="bg-[#171717] hover:bg-[#222222] border border-[#262626] text-[#E5E5E5] px-6 py-3 rounded-xl text-sm transition">
+            Log In to Studio
+          </button>
+        </div>
+      </div>
+
+      <!-- Studio Preview Showcase with Interactive Tab Switcher -->
+      <div class="md:col-span-5">
+        <div id="studioMockWindow" class="bg-[#171717] border border-[#262626] rounded-2xl overflow-hidden shadow-2xl">
+          <!-- Top Bar Mock -->
+          <div class="px-4 py-3 bg-[#0A0A0A] border-b border-[#262626] flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <p class="text-[10px] uppercase tracking-wider text-neutral-500">Project Board</p>
+              <p id="mockBoardTitle" class="font-heading text-xl text-[#E5E5E5] leading-none mt-0.5 truncate">NIGHT SHOOT — SCENE 01</p>
+            </div>
+            <span id="mockHeaderBadge" class="text-[11px] bg-[#9333EA]/15 text-[#A855F7] border border-[#9333EA]/40 px-2.5 py-0.5 rounded shrink-0">
+              Columns &amp; Snap
+            </span>
+          </div>
+
+          <!-- Interactive Tab Switcher Bar -->
+          <div class="bg-[#121212] border-b border-[#262626] px-3 py-2 flex items-center gap-1.5 overflow-x-auto">
+            <button
+              type="button"
+              role="tab"
+              id="tab-canvas"
+              aria-selected="true"
+              data-mock-tab="canvas"
+              onclick="switchStudioMockTab('canvas')"
+              class="mock-tab-btn px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#9333EA] text-white transition shrink-0"
+            >
+              Canvas &amp; Columns
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-frames"
+              aria-selected="false"
+              data-mock-tab="frames"
+              onclick="switchStudioMockTab('frames')"
+              class="mock-tab-btn px-2.5 py-1 rounded-lg text-[11px] font-medium bg-[#171717] text-neutral-400 hover:text-white border border-[#262626] transition shrink-0"
+            >
+              Shot &amp; Mood
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="tab-handoff"
+              aria-selected="false"
+              data-mock-tab="handoff"
+              onclick="switchStudioMockTab('handoff')"
+              class="mock-tab-btn px-2.5 py-1 rounded-lg text-[11px] font-medium bg-[#171717] text-neutral-400 hover:text-white border border-[#262626] transition shrink-0"
+            >
+              Export &amp; Bin
+            </button>
+          </div>
+
+          <!-- Workspace Mock -->
+          <div class="p-4 space-y-3">
+            <div class="grid grid-cols-2 gap-3">
+              <!-- Primary Card (Shot / Mood / To-Do per tab) -->
+              <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-3 space-y-2">
+                <div class="flex justify-between items-center gap-1">
+                  <span id="mockLeftLabel" class="text-[10px] font-bold uppercase tracking-wider text-[#A855F7] truncate">SHOT 01</span>
+                  <span id="mockLeftMeta" class="text-[10px] text-neutral-400 font-mono shrink-0">16:9 &bull; 50mm</span>
+                </div>
+                <div class="aspect-video rounded-lg bg-gradient-to-tr from-[#0A0A0A] via-[#9333EA]/25 to-[#3B82F6]/20 border border-[#262626] flex flex-col items-center justify-center p-2 text-center">
+                  <span id="mockLeftVisualTitle" class="text-[11px] font-semibold text-[#E5E5E5] leading-snug">Exterior Alley</span>
+                  <span id="mockLeftVisualSub" class="text-[10px] text-neutral-400 mt-0.5">Slow handheld &bull; Wet neon</span>
+                </div>
+                <p id="mockLeftNote" class="text-[11px] text-neutral-400 leading-snug">
+                  Drag into a column lane or keep free on the canvas.
+                </p>
+              </div>
+
+              <!-- Secondary Card (Column / Palette / Bin & Share per tab) -->
+              <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-3 space-y-2 flex flex-col justify-between">
+                <div class="space-y-2">
+                  <div class="flex justify-between items-center gap-1">
+                    <span id="mockRightLabel" class="text-[10px] font-bold uppercase tracking-wider text-amber-400 truncate">COLUMN LANE</span>
+                    <span id="mockRightMeta" class="text-[10px] text-neutral-400 font-mono shrink-0">2 Items</span>
+                  </div>
+                  <div id="mockRightItems" class="space-y-1.5">
+                    <div class="bg-[#171717] border border-[#262626] rounded-lg px-2.5 py-1.5">
+                      <span class="block text-[9px] font-bold uppercase text-[#A855F7]">&#8942;&#8942; Shot (2.39:1)</span>
+                      <span class="text-[11px] text-neutral-200 block truncate">Dolly Rain Reflection</span>
+                    </div>
+                    <div class="bg-[#171717] border border-[#262626] rounded-lg px-2.5 py-1.5">
+                      <span class="block text-[9px] font-bold uppercase text-[#60A5FA]">&#8942;&#8942; Sub-Board</span>
+                      <span class="text-[11px] text-neutral-200 block truncate">Wardrobe &amp; Styling</span>
+                    </div>
+                  </div>
+                </div>
+                <p id="mockRightFooter" class="text-[10px] text-neutral-500 pt-1">
+                  Move between columns or pop out.
+                </p>
+              </div>
+            </div>
+
+            <!-- Bottom Status / Cue Strip -->
+            <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 flex items-center justify-between gap-2">
+              <span id="mockStripTag" class="text-[10px] font-bold uppercase tracking-wider text-[#34D399] shrink-0">Studio Tip</span>
+              <span id="mockStripText" class="text-[11px] text-neutral-400 truncate">Edge snap guides &amp; equal spacing active</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section id="features" class="max-w-6xl mx-auto px-6 py-24">
+    <div class="mb-12">
+      <p class="text-xs uppercase tracking-widest text-[#A855F7] mb-2">Studio Toolkit</p>
+      <h2 class="font-heading text-4xl md:text-5xl text-[#E5E5E5]">MADE FOR HOW VISUAL CREATORS PREP</h2>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="bg-[#171717] border border-[#262626] rounded-2xl p-6 space-y-3">
+        <span class="inline-block text-xs font-semibold uppercase tracking-wider text-[#A855F7]">01 • Storyboards</span>
+        <h3 class="font-heading text-2xl text-[#E5E5E5]">ASPECT-RATIO SHOT CARDS</h3>
+        <p class="text-sm text-neutral-400 leading-relaxed">
+          Switch between 16:9, 2.39:1 Scope, 4:5, 1:1, and 9:16 frames. Log shot size, lens choice, camera movement, and action cues right below every frame.
+        </p>
+      </div>
+
+      <div class="bg-[#171717] border border-[#262626] rounded-2xl p-6 space-y-3">
+        <span class="inline-block text-xs font-semibold uppercase tracking-wider text-[#34D399]">02 • Moodboards</span>
+        <h3 class="font-heading text-2xl text-[#E5E5E5]">MOOD & PALETTE CARDS</h3>
+        <p class="text-sm text-neutral-400 leading-relaxed">
+          Drop lighting references, wardrobe textures, and location stills alongside customizable color swatches and styling notes.
+        </p>
+      </div>
+
+      <div class="bg-[#171717] border border-[#262626] rounded-2xl p-6 space-y-3">
+        <span class="inline-block text-xs font-semibold uppercase tracking-wider text-[#60A5FA]">03 • Organization</span>
+        <h3 class="font-heading text-2xl text-[#E5E5E5]">PROJECT BOARDS & SUB-BOARDS</h3>
+        <p class="text-sm text-neutral-400 leading-relaxed">
+          Keep every shoot, campaign, or episode in its own project board—and nest sub-boards inside your canvas for scenes, cast, or lighting setups.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA Banner -->
+  <section id="workflow" class="border-t border-[#262626] bg-[#171717]/40">
+    <div class="max-w-6xl mx-auto px-6 py-20 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
+      <div>
+        <h2 class="font-heading text-4xl md:text-5xl text-[#E5E5E5]">READY TO BUILD YOUR NEXT BOARD?</h2>
+        <p class="text-neutral-400 text-sm mt-2">Create an account in seconds and jump straight into your boardie studio workspace.</p>
+      </div>
+      <button onclick="openAuthDrawer('signup')" class="bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold px-6 py-3 rounded-xl text-sm transition shrink-0">
+        Get Started Free
+      </button>
+    </div>
+  </section>
+
+  <!-- Rich Multi-Column Footer -->
+  <footer class="border-t border-[#262626] bg-[#0A0A0A] pt-16 pb-10 px-6">
+    <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-12 pb-12 border-b border-[#262626]">
+      
+      <!-- Column 1: Brand & Socials -->
+      <div class="md:col-span-4 space-y-4">
+        <a href="index.html" class="inline-block">
+          <img src="./assets/Banner.png" alt="boardie" class="h-10 w-auto object-contain" />
+        </a>
+        <p class="text-sm text-neutral-400 leading-relaxed max-w-xs">
+          Your visual bestie for storyboarding and moodboarding. Built for filmmakers, photographers, and creative directors.
+        </p>
+        <!-- Social Media Links (Update href="#" with your profile URLs later) -->
+        <div class="flex items-center gap-3 pt-1">
+          <a href="#" aria-label="Instagram" title="Instagram (Coming Soon)" class="w-9 h-9 rounded-lg bg-[#171717] border border-[#262626] hover:border-[#A855F7] text-neutral-400 hover:text-white flex items-center justify-center transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+            </svg>
+          </a>
+          <a href="#" aria-label="LinkedIn" title="LinkedIn (Coming Soon)" class="w-9 h-9 rounded-lg bg-[#171717] border border-[#262626] hover:border-[#60A5FA] text-neutral-400 hover:text-white flex items-center justify-center transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path>
+              <rect x="2" y="9" width="4" height="12"></rect>
+              <circle cx="4" cy="4" r="2"></circle>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- Column 2: Site Navigation -->
+      <div class="md:col-span-3 space-y-3">
+        <p class="font-heading text-lg tracking-wider text-[#E5E5E5]">NAVIGATION</p>
+        <ul class="space-y-2.5 text-sm text-neutral-400">
+          <li><a href="index.html" class="hover:text-[#E5E5E5] transition">Home</a></li>
+          <li><a href="features.html" class="hover:text-[#E5E5E5] transition">Features</a></li>
+          <li><a href="how-it-works.html" class="hover:text-[#E5E5E5] transition">How It Works</a></li>
+          <li><a href="pricing.html" class="hover:text-[#E5E5E5] transition">Pricing</a></li>
+          <li><button onclick="openAuthDrawer('login')" class="hover:text-[#A855F7] transition">Log In to Studio</button></li>
+          <li><button onclick="openAuthDrawer('signup')" class="hover:text-[#34D399] transition">Create Free Account</button></li>
+        </ul>
+      </div>
+
+      <!-- Column 3: Newsletter Signup -->
+      <div class="md:col-span-5 space-y-3">
+        <p class="font-heading text-lg tracking-wider text-[#E5E5E5]">JOIN THE STUDIO DISPATCH</p>
+        <p class="text-sm text-neutral-400 leading-relaxed">
+          Get updates on new storyboarding tools, framing templates, and release notes. No spam, ever.
+        </p>
+        <form id="newsletterForm" onsubmit="handleNewsletterSubmit(event)" class="space-y-2.5 pt-1">
+          <!-- First Name (Full width on top) -->
+          <input 
+            type="text" 
+            id="newsletterName"
+            placeholder="First name (optional)" 
+            class="w-full bg-[#171717] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-500 transition"
+          />
+          <!-- Email + Subscribe Button side-by-side -->
+          <div class="flex flex-col sm:flex-row gap-2.5">
+            <input 
+              type="email" 
+              id="newsletterEmail"
+              required
+              placeholder="you@studio.com" 
+              class="flex-1 bg-[#171717] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-500 transition"
+            />
+            <button type="submit" class="bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition shrink-0">
+              Subscribe
+            </button>
+          </div>
+        </form>
+        <p id="newsletterMessage" class="hidden text-xs text-[#34D399] pt-1"></p>
+      </div>
+
+    </div>
+
+    <div class="max-w-6xl mx-auto pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500">
+      <span>&copy; 2026 boardie (A subsidiary of Jiwe Msingi Media & Entertainment Ltd.). All rights reserved.</span>
+      <span>Made for visual storytellers.</span>
+    </div>
+  </footer>
+
+  <!-- Auth Slide-Over Sidecart (Backdrop + Drawer) -->
+  <div id="authBackdrop" onclick="closeAuthDrawer()" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300"></div>
+
+  <aside id="authDrawer" aria-hidden="true" class="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-[#171717] border-l border-[#262626] shadow-2xl transform translate-x-full transition-transform duration-300 ease-out flex flex-col justify-between p-6 sm:p-8 overflow-y-auto">
+    
+    <div>
+      <!-- Drawer Header -->
+      <div class="flex items-center justify-between pb-6 border-b border-[#262626]">
+        <img src="./assets/Banner.png" alt="boardie" class="h-10 w-auto object-contain" />
+        <button onclick="closeAuthDrawer()" aria-label="Close panel" class="w-8 h-8 rounded-lg bg-[#0A0A0A] border border-[#262626] hover:border-neutral-500 text-neutral-400 hover:text-white flex items-center justify-center transition">
+          &times;
+        </button>
+      </div>
+
+      <!-- Mode Switcher Tabs -->
+      <div class="grid grid-cols-2 gap-1 bg-[#0A0A0A] p-1 rounded-xl border border-[#262626] mt-6">
+        <button id="tabLogin" onclick="switchAuthMode('login')" class="py-2 text-xs font-semibold rounded-lg transition">
+          Log In
+        </button>
+        <button id="tabSignup" onclick="switchAuthMode('signup')" class="py-2 text-xs font-semibold rounded-lg transition">
+          Sign Up
+        </button>
+      </div>
+
+      <!-- Dynamic Title -->
+      <div class="mt-6 space-y-1">
+        <h2 id="authTitle" class="font-heading text-3xl text-[#E5E5E5]">WELCOME BACK</h2>
+        <p id="authSubtitle" class="text-xs text-neutral-400">Enter your details to open your boardie studio.</p>
+      </div>
+
+      <!-- Auth Form -->
+      <form id="authForm" onsubmit="handleAuthSubmit(event)" class="mt-6 space-y-4">
+        <!-- Name Field (Sign Up Only) -->
+        <div id="nameFieldGroup" class="hidden space-y-1.5">
+          <label for="authName" class="block text-xs text-neutral-300">Your Name or Studio</label>
+          <input 
+            type="text" 
+            id="authName" 
+            placeholder="Your Name or Studio" 
+            class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-600 transition"
+          />
+        </div>
+
+        <!-- Role Selector (Sign Up Only) -->
+        <div id="roleFieldGroup" class="hidden space-y-1.5">
+          <label for="authRole" class="block text-xs text-neutral-300">Primary Craft</label>
+          <select id="authRole" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] transition">
+            <option value="Filmmaker & Director">Filmmaker & Director</option>
+            <option value="Photographer">Photographer</option>
+            <option value="Cinematographer / DP">Cinematographer / DP</option>
+            <option value="Creative Director">Creative Director</option>
+          </select>
+        </div>
+
+        <!-- Email -->
+        <div class="space-y-1.5">
+          <label for="authEmail" class="block text-xs text-neutral-300">Email Address</label>
+          <input 
+            type="email" 
+            id="authEmail" 
+            required 
+            placeholder="you@example.com" 
+            class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-600 transition"
+          />
+        </div>
+
+        <!-- Password -->
+        <div class="space-y-1.5">
+          <label for="authPassword" class="block text-xs text-neutral-300">Password</label>
+          <input 
+            type="password" 
+            id="authPassword" 
+            required 
+            minlength="6"
+            placeholder="••••••••" 
+            class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-600 transition"
+          />
+        </div>
+
+        <button type="submit" id="authSubmitBtn" class="w-full bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold py-3 rounded-xl text-sm transition mt-2">
+          Enter Studio
+        </button>
+      </form>
+    </div>
+
+    <!-- Drawer Footer Note -->
+    <div class="pt-6 border-t border-[#262626] text-[11px] text-neutral-500 flex items-center justify-between">
+      <span>Boards save automatically in your studio.</span>
+      <span class="text-[#34D399]">Free Beta</span>
+    </div>
+
+  </aside>
+
+  <!-- Interactive Scripts for Showcase Tabs, Sidecart & Newsletter -->
+  <script>
+    const STUDIO_MOCK_PRESETS = {
+      canvas: {
+        boardTitle: 'NIGHT SHOOT — SCENE 01',
+        headerBadge: 'Columns & Snap',
+        leftLabel: 'SHOT 01',
+        leftLabelColor: 'text-[#A855F7]',
+        leftMeta: '16:9 • 50mm',
+        leftVisualTitle: 'Exterior Alley',
+        leftVisualSub: 'Slow handheld • Wet neon',
+        leftNote: 'Drag into a column lane or keep free on the canvas.',
+        rightLabel: 'COLUMN LANE',
+        rightLabelColor: 'text-amber-400',
+        rightMeta: '2 Items',
+        rightItems: [
+          { tag: 'Shot (2.39:1)', tagColor: 'text-[#A855F7]', title: 'Dolly Rain Reflection' },
+          { tag: 'Sub-Board', tagColor: 'text-[#60A5FA]', title: 'Wardrobe & Styling' }
+        ],
+        rightFooter: 'Move between columns or pop out.',
+        stripTag: 'Studio Tip',
+        stripTagColor: 'text-[#34D399]',
+        stripText: 'Edge snap guides & equal spacing active'
+      },
+      frames: {
+        boardTitle: 'NIGHT SHOOT — SCENE 01',
+        headerBadge: '2.39:1 Scope',
+        leftLabel: 'MOOD LOOK',
+        leftLabelColor: 'text-[#34D399]',
+        leftMeta: '5 Swatches',
+        leftVisualTitle: 'Waxed Trench Palette',
+        leftVisualSub: 'Cool rim + shadow notes',
+        leftNote: 'Upload reference frames to sample swatches.',
+        rightLabel: 'SHOT & CHECKLIST',
+        rightLabelColor: 'text-[#A855F7]',
+        rightMeta: '1/3 Done',
+        rightItems: [
+          { tag: 'Shot (2.39:1)', tagColor: 'text-[#A855F7]', title: 'Neon Crossing • Wide' },
+          { tag: 'To-Do', tagColor: 'text-emerald-300', title: 'Test 50mm focus marks' }
+        ],
+        rightFooter: 'Cycle 16:9, 2.39:1, 1:1, 4:5 & 9:16.',
+        stripTag: 'Palette',
+        stripTagColor: 'text-[#34D399]',
+        stripText: 'Click swatches in Studio to copy hex codes'
+      },
+      handoff: {
+        boardTitle: 'NIGHT SHOOT — SCENE 01',
+        headerBadge: 'Read-Only & Bin',
+        leftLabel: 'BOARD BIN',
+        leftLabelColor: 'text-sky-300',
+        leftMeta: '2 Deleted',
+        leftVisualTitle: 'Recover Anytime',
+        leftVisualSub: 'Restore or empty board bin',
+        leftNote: 'Deleted cards & sub-boards stay recoverable.',
+        rightLabel: 'SHARE & EXPORT',
+        rightLabelColor: 'text-[#60A5FA]',
+        rightMeta: 'PDF + Link',
+        rightItems: [
+          { tag: 'Preview', tagColor: 'text-[#A855F7]', title: 'Read-Only Share Link' },
+          { tag: 'Confirm', tagColor: 'text-amber-400', title: 'Themed Board Delete Modal' }
+        ],
+        rightFooter: 'Print-ready PDF export included.',
+        stripTag: 'Handoff',
+        stripTagColor: 'text-[#60A5FA]',
+        stripText: 'Share read-only snapshots with crew & clients'
+      }
+    };
+
+    function switchStudioMockTab(tabKey) {
+      const preset = STUDIO_MOCK_PRESETS[tabKey];
+      if (!preset) return;
+
+      document.querySelectorAll('.mock-tab-btn').forEach((btn) => {
+        const isActive = btn.dataset.mockTab === tabKey;
+        btn.setAttribute('aria-selected', String(isActive));
+        btn.className = isActive
+          ? 'mock-tab-btn px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-[#9333EA] text-white transition shrink-0'
+          : 'mock-tab-btn px-2.5 py-1 rounded-lg text-[11px] font-medium bg-[#171717] text-neutral-400 hover:text-white border border-[#262626] transition shrink-0';
+      });
+
+      document.getElementById('mockBoardTitle').textContent = preset.boardTitle;
+      document.getElementById('mockHeaderBadge').textContent = preset.headerBadge;
+
+      const leftLabel = document.getElementById('mockLeftLabel');
+      leftLabel.textContent = preset.leftLabel;
+      leftLabel.className = `text-[10px] font-bold uppercase tracking-wider truncate ${preset.leftLabelColor}`;
+
+      document.getElementById('mockLeftMeta').textContent = preset.leftMeta;
+      document.getElementById('mockLeftVisualTitle').textContent = preset.leftVisualTitle;
+      document.getElementById('mockLeftVisualSub').textContent = preset.leftVisualSub;
+      document.getElementById('mockLeftNote').textContent = preset.leftNote;
+
+      const rightLabel = document.getElementById('mockRightLabel');
+      rightLabel.textContent = preset.rightLabel;
+      rightLabel.className = `text-[10px] font-bold uppercase tracking-wider truncate ${preset.rightLabelColor}`;
+
+      document.getElementById('mockRightMeta').textContent = preset.rightMeta;
+      document.getElementById('mockRightItems').innerHTML = preset.rightItems
+        .map((item) =>
+          `<div class="bg-[#171717] border border-[#262626] rounded-lg px-2.5 py-1.5">
+            <span class="block text-[9px] font-bold uppercase ${item.tagColor}">&#8942;&#8942; ${item.tag}</span>
+            <span class="text-[11px] text-neutral-200 block truncate">${item.title}</span>
+          </div>`
+        )
+        .join('');
+      document.getElementById('mockRightFooter').textContent = preset.rightFooter;
+
+      const stripTag = document.getElementById('mockStripTag');
+      stripTag.textContent = preset.stripTag;
+      stripTag.className = `text-[10px] font-bold uppercase tracking-wider shrink-0 ${preset.stripTagColor}`;
+      document.getElementById('mockStripText').textContent = preset.stripText;
+    }
+
+    const backdrop = document.getElementById('authBackdrop');
+    const drawer = document.getElementById('authDrawer');
+    let currentAuthMode = 'login';
+
+    function openAuthDrawer(mode = 'login') {
+      switchAuthMode(mode);
+      backdrop.classList.remove('hidden');
+      // Trigger reflow so opacity transition plays smoothly
+      void backdrop.offsetWidth;
+      backdrop.classList.remove('opacity-0');
+      drawer.classList.remove('translate-x-full');
+      drawer.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeAuthDrawer() {
+      backdrop.classList.add('opacity-0');
+      drawer.classList.add('translate-x-full');
+      drawer.setAttribute('aria-hidden', 'true');
+      setTimeout(() => {
+        backdrop.classList.add('hidden');
+      }, 300);
+    }
+
+    function switchAuthMode(mode) {
+      currentAuthMode = mode;
+      const tabLogin = document.getElementById('tabLogin');
+      const tabSignup = document.getElementById('tabSignup');
+      const nameGroup = document.getElementById('nameFieldGroup');
+      const roleGroup = document.getElementById('roleFieldGroup');
+      const authName = document.getElementById('authName');
+      const authTitle = document.getElementById('authTitle');
+      const authSubtitle = document.getElementById('authSubtitle');
+      const authSubmitBtn = document.getElementById('authSubmitBtn');
+
+      if (mode === 'signup') {
+        tabSignup.className = 'py-2 text-xs font-semibold rounded-lg bg-[#9333EA] text-white transition';
+        tabLogin.className = 'py-2 text-xs font-semibold rounded-lg text-neutral-400 hover:text-white transition';
+        nameGroup.classList.remove('hidden');
+        roleGroup.classList.remove('hidden');
+        authName.required = true;
+        authTitle.textContent = 'CREATE YOUR STUDIO';
+        authSubtitle.textContent = 'Start organizing your storyboards and moodboards in seconds.';
+        authSubmitBtn.textContent = 'Create Account & Enter Studio';
+      } else {
+        tabLogin.className = 'py-2 text-xs font-semibold rounded-lg bg-[#9333EA] text-white transition';
+        tabSignup.className = 'py-2 text-xs font-semibold rounded-lg text-neutral-400 hover:text-white transition';
+        nameGroup.classList.add('hidden');
+        roleGroup.classList.add('hidden');
+        authName.required = false;
+        authTitle.textContent = 'WELCOME BACK';
+        authSubtitle.textContent = 'Log in to access your project boards and shot lists.';
+        authSubmitBtn.textContent = 'Log In to Studio';
+      }
+    }
+
+    function handleAuthSubmit(event) {
+      event.preventDefault();
+      const email = document.getElementById('authEmail').value.trim();
+      const nameInput = document.getElementById('authName').value.trim();
+      const roleInput = document.getElementById('authRole').value;
+
+      // Save user profile session locally so studio.html recognizes them
+      const existingUser = JSON.parse(localStorage.getItem('boardie_user') || 'null');
+      const userProfile = {
+        name: currentAuthMode === 'signup' ? nameInput : (existingUser?.name || email.split('@')[0]),
+        email: email,
+        role: currentAuthMode === 'signup' ? roleInput : (existingUser?.role || 'Creator'),
+        loggedInAt: new Date().toISOString()
+      };
+
+      localStorage.setItem('boardie_user', JSON.stringify(userProfile));
+      window.location.href = 'studio.html';
+    }
+
+    function handleNewsletterSubmit(event) {
+      event.preventDefault();
+      const nameInput = document.getElementById('newsletterName');
+      const emailInput = document.getElementById('newsletterEmail');
+      const msg = document.getElementById('newsletterMessage');
+
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+
+      if (email) {
+        msg.textContent = name
+          ? `You're on the list, ${name}! We'll send updates to ${email}.`
+          : `You're on the list! We'll send updates to ${email}.`;
+        msg.classList.remove('hidden');
+        nameInput.value = '';
+        emailInput.value = '';
+      }
+    }
+
+    // Close drawer with Escape key
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeAuthDrawer();
+    });
+  </script>
+
+</body>
+</html>

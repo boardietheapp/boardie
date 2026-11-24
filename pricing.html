@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pricing — boardie</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-[#0A0A0A] text-[#E5E5E5] antialiased selection:bg-[#9333EA] selection:text-white">
+
+  <!-- Top Navigation -->
+  <nav class="sticky top-0 z-40 bg-[#0A0A0A]/90 backdrop-blur border-b border-[#262626]">
+    <div class="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+      <!-- Custom Brand Logo -->
+      <a href="index.html" class="flex items-center gap-2.5 group">
+        <img
+          src="./assets/Banner.png"
+          alt="boardie logo"
+          class="h-12 w-auto object-contain"
+        />
+      </a>
+
+      <div class="hidden md:flex items-center gap-8 text-sm text-neutral-400">
+        <a href="features.html" class="hover:text-[#E5E5E5] transition">Features</a>
+        <a href="how-it-works.html" class="hover:text-[#E5E5E5] transition">How It Works</a>
+        <a href="pricing.html" class="text-[#E5E5E5] font-medium transition">Pricing</a>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button onclick="openAuthDrawer('login')" class="text-sm text-neutral-300 hover:text-white px-3 py-2 transition">
+          Log In
+        </button>
+        <button onclick="openAuthDrawer('signup')" class="text-sm font-semibold bg-[#9333EA] hover:bg-[#A855F7] text-white px-4 py-2 rounded-lg transition">
+          Start Free
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Page Hero -->
+  <header class="studio-grid border-b border-[#262626]">
+    <div class="max-w-6xl mx-auto px-6 py-20 md:py-24">
+      <div class="max-w-4xl space-y-5">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#171717] border border-[#262626] text-xs text-[#34D399]">
+          <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+          Simple Studio Plans
+        </div>
+        <h1 class="font-heading text-5xl md:text-7xl leading-[0.95] text-[#E5E5E5]">
+          PLANS THAT SCALE FROM <span class="text-[#A855F7]">SOLO SHOOTERS</span> TO <span class="text-[#34D399]">FULL CREWS.</span>
+        </h1>
+        <p class="text-neutral-400 text-base md:text-lg leading-relaxed">
+          Start free on the spatial canvas or upgrade for unlimited project boards, reference file attachments, and team production lanes.
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <!-- Pricing Tiers -->
+  <section class="max-w-6xl mx-auto px-6 py-20 border-b border-[#262626] space-y-10">
+
+    <!-- Monthly vs. Annual Toggle -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#171717] border border-[#262626] rounded-2xl p-4">
+      <div class="space-y-0.5">
+        <span class="text-xs font-bold uppercase tracking-wider text-[#E5E5E5]">Billing Frequency</span>
+        <p id="billingCycleNote" class="text-xs text-neutral-400">Billed month-to-month. Switch to annual to save 20%.</p>
+      </div>
+
+      <div class="inline-flex items-center gap-1 bg-[#0A0A0A] p-1 rounded-xl border border-[#262626] self-start sm:self-auto">
+        <button
+          id="toggleMonthly"
+          type="button"
+          onclick="setBillingCycle('monthly')"
+          class="px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#9333EA] text-white transition"
+        >
+          Monthly
+        </button>
+        <button
+          id="toggleAnnual"
+          type="button"
+          onclick="setBillingCycle('annual')"
+          class="px-3.5 py-2 rounded-lg text-xs font-semibold text-neutral-400 hover:text-white transition flex items-center gap-2"
+        >
+          <span>Annual</span>
+          <span class="text-[10px] px-2 py-0.5 rounded-full bg-[#10B981]/15 text-[#34D399] border border-[#34D399]/30 font-semibold">
+            Save 20%
+          </span>
+        </button>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6 items-stretch">
+
+      <!-- Free Beta -->
+      <div class="bg-[#171717] border border-[#262626] rounded-2xl p-6 flex flex-col justify-between space-y-6">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-[#60A5FA]">01 • Solo Starter</span>
+            <span id="badge-free" class="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0A0A0A] border border-[#262626] text-neutral-400">Starter</span>
+          </div>
+          <h2 class="font-heading text-3xl text-[#E5E5E5]">FREE BETA</h2>
+          <div class="space-y-1">
+            <p id="price-free" class="text-3xl font-bold text-[#E5E5E5]">$0 <span class="text-xs font-normal text-neutral-400">/ month</span></p>
+            <p id="subprice-free" class="text-[11px] text-neutral-500">Free forever during beta</p>
+          </div>
+          <p class="text-xs text-neutral-400 leading-relaxed">
+            Built for directors and photographers learning the canvas and sketching out short sequences.
+          </p>
+          <ul class="space-y-2.5 text-xs text-neutral-300 pt-2">
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#60A5FA]"></span>
+              Up to 3 active Project Boards & Sub-Boards
+            </li>
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#60A5FA]"></span>
+              Shot, Mood, Note, Column & To-Do tools
+            </li>
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#60A5FA]"></span>
+              Read-only preview links & PDF export
+            </li>
+          </ul>
+        </div>
+
+        <button onclick="selectPlan('free')" class="w-full py-3 rounded-xl text-xs font-semibold bg-[#0A0A0A] hover:bg-[#222222] border border-[#262626] text-[#E5E5E5] transition">
+          Start with Free Beta
+        </button>
+      </div>
+
+      <!-- Creator Pro (Emerald Highlight) -->
+      <div class="bg-[#171717] border border-[#34D399]/60 rounded-2xl p-6 flex flex-col justify-between space-y-6 shadow-2xl">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-[#34D399]">02 • Most Popular</span>
+            <span id="badge-pro" class="text-[11px] px-2.5 py-0.5 rounded-full bg-[#10B981]/15 border border-[#34D399]/30 text-[#34D399]">Creator Pro</span>
+          </div>
+          <h2 class="font-heading text-3xl text-[#E5E5E5]">CREATOR PRO</h2>
+          <div class="space-y-1">
+            <p id="price-pro" class="text-3xl font-bold text-[#E5E5E5]">$12 <span class="text-xs font-normal text-neutral-400">/ month</span></p>
+            <p id="subprice-pro" class="text-[11px] text-neutral-500">Billed monthly ($12/mo)</p>
+          </div>
+          <p class="text-xs text-neutral-400 leading-relaxed">
+            Designed for active filmmakers, DPs, and visual storytellers juggling multiple shoots and lookbooks.
+          </p>
+          <ul class="space-y-2.5 text-xs text-neutral-300 pt-2">
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#34D399]"></span>
+              Unlimited Project Boards & nested Sub-Boards
+            </li>
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#34D399]"></span>
+              Image, PDF & document attachments on cards
+            </li>
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#34D399]"></span>
+              Smart alignment guides, zoom & board Bin recovery
+            </li>
+          </ul>
+        </div>
+
+        <button onclick="selectPlan('pro')" class="w-full py-3 rounded-xl text-xs font-semibold bg-[#10B981] hover:bg-[#34D399] text-[#0A0A0A] transition">
+          Choose Creator Pro
+        </button>
+      </div>
+
+      <!-- Studio Team -->
+      <div class="bg-[#171717] border border-[#262626] rounded-2xl p-6 flex flex-col justify-between space-y-6">
+        <div class="space-y-4">
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-xs font-bold uppercase tracking-wider text-[#A855F7]">03 • Production Houses</span>
+            <span id="badge-team" class="text-[11px] px-2.5 py-0.5 rounded-full bg-[#0A0A0A] border border-[#262626] text-neutral-400">Studio Team</span>
+          </div>
+          <h2 class="font-heading text-3xl text-[#E5E5E5]">STUDIO TEAM</h2>
+          <div class="space-y-1">
+            <p id="price-team" class="text-3xl font-bold text-[#E5E5E5]">$29 <span class="text-xs font-normal text-neutral-400">/ month</span></p>
+            <p id="subprice-team" class="text-[11px] text-neutral-500">Billed monthly ($29/mo)</p>
+          </div>
+          <p class="text-xs text-neutral-400 leading-relaxed">
+            Built for production companies and creative teams organizing multi-scene decks and client reviews.
+          </p>
+          <ul class="space-y-2.5 text-xs text-neutral-300 pt-2">
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#A855F7]"></span>
+              Everything in Creator Pro included
+            </li>
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#A855F7]"></span>
+              Multi-column department workflows & shared links
+            </li>
+            <li class="flex items-center gap-2.5">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#A855F7]"></span>
+              Centralized billing & studio invoice details
+            </li>
+          </ul>
+        </div>
+
+        <button onclick="selectPlan('team')" class="w-full py-3 rounded-xl text-xs font-semibold bg-[#0A0A0A] hover:bg-[#222222] border border-[#262626] text-[#E5E5E5] transition">
+          Choose Studio Team
+        </button>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Bottom CTA -->
+  <section class="border-t border-[#262626] bg-[#171717]/40">
+    <div class="max-w-6xl mx-auto px-6 py-16 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <div>
+        <h2 class="font-heading text-4xl text-[#E5E5E5]">READY TO BUILD YOUR NEXT BOARD?</h2>
+        <p class="text-neutral-400 text-sm mt-1">Explore the toolkit or jump straight into your studio workspace.</p>
+      </div>
+      <div class="flex flex-wrap gap-3">
+        <a href="features.html" class="bg-[#171717] hover:bg-[#222222] border border-[#262626] text-[#E5E5E5] px-5 py-3 rounded-xl text-sm transition">
+          Explore Features &rarr;
+        </a>
+        <button onclick="openAuthDrawer('signup')" class="bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold px-6 py-3 rounded-xl text-sm transition">
+          Start Free
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Rich Multi-Column Footer -->
+  <footer class="border-t border-[#262626] bg-[#0A0A0A] pt-16 pb-10 px-6">
+    <div class="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-12 gap-12 pb-12 border-b border-[#262626]">
+
+      <!-- Column 1: Brand & Socials -->
+      <div class="md:col-span-4 space-y-4">
+        <a href="index.html" class="inline-block">
+          <img src="./assets/Banner.png" alt="boardie" class="h-10 w-auto object-contain" />
+        </a>
+        <p class="text-sm text-neutral-400 leading-relaxed max-w-xs">
+          Your visual bestie for storyboarding and moodboarding. Built for filmmakers, photographers, and creative directors.
+        </p>
+        <div class="flex items-center gap-3 pt-1">
+          <a href="#" aria-label="Instagram" title="Instagram (Coming Soon)" class="w-9 h-9 rounded-lg bg-[#171717] border border-[#262626] hover:border-[#A855F7] text-neutral-400 hover:text-white flex items-center justify-center transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="2" width="20" height="20" rx="5" ry="5"></rect>
+              <path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"></path>
+              <line x1="17.5" y1="6.5" x2="17.51" y2="6.5"></line>
+            </svg>
+          </a>
+          <a href="#" aria-label="LinkedIn" title="LinkedIn (Coming Soon)" class="w-9 h-9 rounded-lg bg-[#171717] border border-[#262626] hover:border-[#60A5FA] text-neutral-400 hover:text-white flex items-center justify-center transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"></path>
+              <rect x="2" y="9" width="4" height="12"></rect>
+              <circle cx="4" cy="4" r="2"></circle>
+            </svg>
+          </a>
+        </div>
+      </div>
+
+      <!-- Column 2: Site Navigation -->
+      <div class="md:col-span-3 space-y-3">
+        <p class="font-heading text-lg tracking-wider text-[#E5E5E5]">NAVIGATION</p>
+        <ul class="space-y-2.5 text-sm text-neutral-400">
+          <li><a href="index.html" class="hover:text-[#E5E5E5] transition">Home</a></li>
+          <li><a href="features.html" class="hover:text-[#E5E5E5] transition">Features</a></li>
+          <li><a href="how-it-works.html" class="hover:text-[#E5E5E5] transition">How It Works</a></li>
+          <li><a href="pricing.html" class="hover:text-[#E5E5E5] transition">Pricing</a></li>
+          <li><button onclick="openAuthDrawer('login')" class="hover:text-[#A855F7] transition">Log In to Studio</button></li>
+          <li><button onclick="openAuthDrawer('signup')" class="hover:text-[#34D399] transition">Create Free Account</button></li>
+        </ul>
+      </div>
+
+      <!-- Column 3: Newsletter Signup -->
+      <div class="md:col-span-5 space-y-3">
+        <p class="font-heading text-lg tracking-wider text-[#E5E5E5]">JOIN THE STUDIO DISPATCH</p>
+        <p class="text-sm text-neutral-400 leading-relaxed">
+          Get updates on new storyboarding tools, framing templates, and release notes. No spam, ever.
+        </p>
+        <form id="newsletterForm" onsubmit="handleNewsletterSubmit(event)" class="space-y-2.5 pt-1">
+          <input
+            type="text"
+            id="newsletterName"
+            placeholder="First name (optional)"
+            class="w-full bg-[#171717] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-500 transition"
+          />
+          <div class="flex flex-col sm:flex-row gap-2.5">
+            <input
+              type="email"
+              id="newsletterEmail"
+              required
+              placeholder="you@studio.com"
+              class="flex-1 bg-[#171717] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-500 transition"
+            />
+            <button type="submit" class="bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold px-5 py-2.5 rounded-xl text-sm transition shrink-0">
+              Subscribe
+            </button>
+          </div>
+        </form>
+        <p id="newsletterMessage" class="hidden text-xs text-[#34D399] pt-1"></p>
+      </div>
+
+    </div>
+
+    <div class="max-w-6xl mx-auto pt-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-neutral-500">
+      <span>&copy; 2026 boardie (A subsidiary of Jiwe Msingi Media & Entertainment Ltd.). All rights reserved.</span>
+      <span>Made for visual storytellers.</span>
+    </div>
+  </footer>
+
+  <!-- Auth Slide-Over Sidecart -->
+  <div id="authBackdrop" onclick="closeAuthDrawer()" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden opacity-0 transition-opacity duration-300"></div>
+
+  <aside id="authDrawer" aria-hidden="true" class="fixed top-0 right-0 z-50 h-full w-full max-w-md bg-[#171717] border-l border-[#262626] shadow-2xl transform translate-x-full transition-transform duration-300 ease-out flex flex-col justify-between p-6 sm:p-8 overflow-y-auto">
+    <div>
+      <div class="flex items-center justify-between pb-6 border-b border-[#262626]">
+        <img src="./assets/Banner.png" alt="boardie" class="h-10 w-auto object-contain" />
+        <button onclick="closeAuthDrawer()" aria-label="Close panel" class="w-8 h-8 rounded-lg bg-[#0A0A0A] border border-[#262626] hover:border-neutral-500 text-neutral-400 hover:text-white flex items-center justify-center transition">
+          &times;
+        </button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-1 bg-[#0A0A0A] p-1 rounded-xl border border-[#262626] mt-6">
+        <button id="tabLogin" onclick="switchAuthMode('login')" class="py-2 text-xs font-semibold rounded-lg transition">
+          Log In
+        </button>
+        <button id="tabSignup" onclick="switchAuthMode('signup')" class="py-2 text-xs font-semibold rounded-lg transition">
+          Sign Up
+        </button>
+      </div>
+
+      <div class="mt-6 space-y-1">
+        <h2 id="authTitle" class="font-heading text-3xl text-[#E5E5E5]">WELCOME BACK</h2>
+        <p id="authSubtitle" class="text-xs text-neutral-400">Enter your details to open your boardie studio.</p>
+      </div>
+
+      <form id="authForm" onsubmit="handleAuthSubmit(event)" class="mt-6 space-y-4">
+        <div id="nameFieldGroup" class="hidden space-y-1.5">
+          <label for="authName" class="block text-xs text-neutral-300">Your Name or Studio</label>
+          <input type="text" id="authName" placeholder="Your Name or Studio" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-600 transition" />
+        </div>
+
+        <div id="roleFieldGroup" class="hidden space-y-1.5">
+          <label for="authRole" class="block text-xs text-neutral-300">Primary Craft</label>
+          <select id="authRole" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] transition">
+            <option value="Filmmaker & Director">Filmmaker & Director</option>
+            <option value="Photographer">Photographer</option>
+            <option value="Cinematographer / DP">Cinematographer / DP</option>
+            <option value="Creative Director">Creative Director</option>
+          </select>
+        </div>
+
+        <div class="space-y-1.5">
+          <label for="authEmail" class="block text-xs text-neutral-300">Email Address</label>
+          <input type="email" id="authEmail" required placeholder="you@example.com" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-600 transition" />
+        </div>
+
+        <div class="space-y-1.5">
+          <label for="authPassword" class="block text-xs text-neutral-300">Password</label>
+          <input type="password" id="authPassword" required minlength="6" placeholder="••••••••" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-4 py-2.5 text-sm text-[#E5E5E5] placeholder-neutral-600 transition" />
+        </div>
+
+        <button type="submit" id="authSubmitBtn" class="w-full bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold py-3 rounded-xl text-sm transition mt-2">
+          Enter Studio
+        </button>
+      </form>
+    </div>
+
+    <div class="pt-6 border-t border-[#262626] text-[11px] text-neutral-500 flex items-center justify-between">
+      <span>Boards save automatically in your studio.</span>
+      <span class="text-[#34D399]">Free Beta</span>
+    </div>
+  </aside>
+
+  <script>
+    const USER_KEY = 'boardie_user';
+    let billingCycle = 'monthly';
+
+    const RATES = {
+      monthly: {
+        note: 'Billed month-to-month. Switch to annual to save 20%.',
+        pro: { price: '$12', sub: 'Billed monthly ($12/mo)' },
+        team: { price: '$29', sub: 'Billed monthly ($29/mo)' }
+      },
+      annual: {
+        note: 'Billed once per year at a 20% discount.',
+        pro: { price: '$10', sub: 'Billed $120/year (save $24)' },
+        team: { price: '$23', sub: 'Billed $276/year (save $72)' }
+      }
+    };
+
+    function setBillingCycle(cycle) {
+      billingCycle = cycle === 'annual' ? 'annual' : 'monthly';
+      const monthlyBtn = document.getElementById('toggleMonthly');
+      const annualBtn = document.getElementById('toggleAnnual');
+      const activeClass = 'px-3.5 py-2 rounded-lg text-xs font-semibold bg-[#9333EA] text-white transition flex items-center gap-2';
+      const inactiveClass = 'px-3.5 py-2 rounded-lg text-xs font-semibold text-neutral-400 hover:text-white transition flex items-center gap-2';
+
+      monthlyBtn.className = billingCycle === 'monthly' ? activeClass : inactiveClass;
+      annualBtn.className = billingCycle === 'annual' ? activeClass : inactiveClass;
+
+      const r = RATES[billingCycle];
+      document.getElementById('billingCycleNote').textContent = r.note;
+      document.getElementById('price-pro').innerHTML = `${r.pro.price} <span class="text-xs font-normal text-neutral-400">/ month</span>`;
+      document.getElementById('subprice-pro').textContent = r.pro.sub;
+      document.getElementById('price-team').innerHTML = `${r.team.price} <span class="text-xs font-normal text-neutral-400">/ month</span>`;
+      document.getElementById('subprice-team').textContent = r.team.sub;
+    }
+
+    function highlightCurrentPlan() {
+      const user = JSON.parse(localStorage.getItem(USER_KEY) || 'null') || {};
+      const activePlan = user.plan || 'free';
+      ['free', 'pro', 'team'].forEach(key => {
+        const badge = document.getElementById(`badge-${key}`);
+        if (!badge) return;
+        if (key === activePlan) {
+          badge.textContent = 'Current Plan';
+          badge.className = 'text-[11px] px-2.5 py-0.5 rounded-full bg-[#34D399]/20 border border-[#34D399]/40 text-[#34D399] font-semibold';
+        }
+      });
+
+      if (user.billingCycle && user.billingCycle.toLowerCase().includes('annual')) {
+        setBillingCycle('annual');
+      } else {
+        setBillingCycle('monthly');
+      }
+    }
+
+    function selectPlan(planKey) {
+      const existing = JSON.parse(localStorage.getItem(USER_KEY) || 'null') || {};
+      const cycleLabel = billingCycle === 'annual' ? 'Annual (Save 20%)' : 'Monthly';
+      const updated = {
+        name: existing.name || 'Creator',
+        email: existing.email || 'creator@boardie.studio',
+        role: existing.role || 'Creator',
+        plan: planKey,
+        billingMethod: existing.billingMethod || 'Card •••• 4242',
+        billingCycle: cycleLabel,
+        billingAddress: existing.billingAddress || ''
+      };
+      localStorage.setItem(USER_KEY, JSON.stringify(updated));
+      window.location.href = 'studio.html';
+    }
+
+    const backdrop = document.getElementById('authBackdrop');
+    const drawer = document.getElementById('authDrawer');
+    let currentAuthMode = 'login';
+
+    function openAuthDrawer(mode = 'login') {
+      switchAuthMode(mode);
+      backdrop.classList.remove('hidden');
+      void backdrop.offsetWidth;
+      backdrop.classList.remove('opacity-0');
+      drawer.classList.remove('translate-x-full');
+      drawer.setAttribute('aria-hidden', 'false');
+    }
+
+    function closeAuthDrawer() {
+      backdrop.classList.add('opacity-0');
+      drawer.classList.add('translate-x-full');
+      drawer.setAttribute('aria-hidden', 'true');
+      setTimeout(() => {
+        backdrop.classList.add('hidden');
+      }, 300);
+    }
+
+    function switchAuthMode(mode) {
+      currentAuthMode = mode;
+      const tabLogin = document.getElementById('tabLogin');
+      const tabSignup = document.getElementById('tabSignup');
+      const nameGroup = document.getElementById('nameFieldGroup');
+      const roleGroup = document.getElementById('roleFieldGroup');
+      const authName = document.getElementById('authName');
+      const authTitle = document.getElementById('authTitle');
+      const authSubtitle = document.getElementById('authSubtitle');
+      const authSubmitBtn = document.getElementById('authSubmitBtn');
+
+      if (mode === 'signup') {
+        tabSignup.className = 'py-2 text-xs font-semibold rounded-lg bg-[#9333EA] text-white transition';
+        tabLogin.className = 'py-2 text-xs font-semibold rounded-lg text-neutral-400 hover:text-white transition';
+        nameGroup.classList.remove('hidden');
+        roleGroup.classList.remove('hidden');
+        authName.required = true;
+        authTitle.textContent = 'CREATE YOUR STUDIO';
+        authSubtitle.textContent = 'Start organizing your storyboards and moodboards in seconds.';
+        authSubmitBtn.textContent = 'Create Account & Enter Studio';
+      } else {
+        tabLogin.className = 'py-2 text-xs font-semibold rounded-lg bg-[#9333EA] text-white transition';
+        tabSignup.className = 'py-2 text-xs font-semibold rounded-lg text-neutral-400 hover:text-white transition';
+        nameGroup.classList.add('hidden');
+        roleGroup.classList.add('hidden');
+        authName.required = false;
+        authTitle.textContent = 'WELCOME BACK';
+        authSubtitle.textContent = 'Log in to access your project boards and shot lists.';
+        authSubmitBtn.textContent = 'Log In to Studio';
+      }
+    }
+
+    function handleAuthSubmit(event) {
+      event.preventDefault();
+      const email = document.getElementById('authEmail').value.trim();
+      const nameInput = document.getElementById('authName').value.trim();
+      const roleInput = document.getElementById('authRole').value;
+
+      const existingUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+      const userProfile = {
+        name: currentAuthMode === 'signup' ? nameInput : (existingUser?.name || email.split('@')[0]),
+        email: email,
+        role: currentAuthMode === 'signup' ? roleInput : (existingUser?.role || 'Creator'),
+        plan: existingUser?.plan || 'free',
+        billingMethod: existingUser?.billingMethod || 'Card •••• 4242',
+        billingCycle: existingUser?.billingCycle || 'Monthly',
+        billingAddress: existingUser?.billingAddress || '',
+        loggedInAt: new Date().toISOString()
+      };
+
+      localStorage.setItem(USER_KEY, JSON.stringify(userProfile));
+      window.location.href = 'studio.html';
+    }
+
+    function handleNewsletterSubmit(event) {
+      event.preventDefault();
+      const nameInput = document.getElementById('newsletterName');
+      const emailInput = document.getElementById('newsletterEmail');
+      const msg = document.getElementById('newsletterMessage');
+
+      const name = nameInput.value.trim();
+      const email = emailInput.value.trim();
+
+      if (email) {
+        msg.textContent = name
+          ? `You're on the list, ${name}! We'll send updates to ${email}.`
+          : `You're on the list! We'll send updates to ${email}.`;
+        msg.classList.remove('hidden');
+        nameInput.value = '';
+        emailInput.value = '';
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') closeAuthDrawer();
+    });
+
+    highlightCurrentPlan();
+  </script>
+
+</body>
+</html>

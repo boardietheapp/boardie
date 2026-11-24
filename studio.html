@@ -1,0 +1,2824 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Studio — boardie</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <style>
+    .resize-handle {
+      position: absolute;
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+      background: #171717;
+      border: 1.5px solid #A855F7;
+      opacity: 0;
+      transition: opacity 140ms ease, transform 140ms ease, background-color 140ms ease;
+      z-index: 20;
+    }
+    .canvas-item:hover .resize-handle,
+    .canvas-item.is-resizing .resize-handle {
+      opacity: 1;
+    }
+    .resize-handle:hover {
+      background: #9333EA;
+      transform: scale(1.2);
+    }
+    .resize-handle[data-dir="nw"] { top: -5px; left: -5px; cursor: nwse-resize; }
+    .resize-handle[data-dir="ne"] { top: -5px; right: -5px; cursor: nesw-resize; }
+    .resize-handle[data-dir="sw"] { bottom: -5px; left: -5px; cursor: nesw-resize; }
+    .resize-handle[data-dir="se"] { bottom: -5px; right: -5px; cursor: nwse-resize; }
+
+    /* Prevents html2canvas from clipping descenders on metadata text without squeezing action buttons */
+    .pdf-capturing .canvas-item .shot-meta-value.truncate {
+      overflow: visible !important;
+      text-overflow: clip !important;
+      white-space: normal !important;
+      line-height: 1.45 !important;
+      padding-bottom: 2px !important;
+    }
+    .pdf-capturing .shot-meta-box {
+      padding-top: 8px !important;
+      padding-bottom: 10px !important;
+    }
+    .pdf-capturing .canvas-item button {
+      overflow: visible !important;
+      box-sizing: border-box !important;
+    }
+    .pdf-capturing .canvas-item svg {
+      display: block !important;
+    }
+
+    @media print {
+      body {
+        background: #ffffff !important;
+        color: #111111 !important;
+        height: auto !important;
+        overflow: visible !important;
+      }
+      header, aside, #projectsPopover, #guideLayer, #accountModal, #binModal, #shareModal, #exportPdfModal, #deleteConfirmModal, .resize-handle, .no-print {
+        display: none !important;
+      }
+      #canvasViewport {
+        overflow: visible !important;
+        height: auto !important;
+        background: #ffffff !important;
+      }
+      #spatialSurface {
+        transform: none !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        display: grid !important;
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 16px !important;
+        padding: 16px !important;
+      }
+      .canvas-item {
+        position: static !important;
+        width: auto !important;
+        height: auto !important;
+        max-width: none !important;
+        break-inside: avoid;
+        box-shadow: none !important;
+        background: #f9fafb !important;
+        color: #111111 !important;
+        border-color: #d1d5db !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-[#0A0A0A] text-[#E5E5E5] antialiased selection:bg-[#9333EA] selection:text-white h-screen overflow-hidden flex flex-col">
+
+  <!-- Hidden Shared File Input for Image Uploads -->
+  <input
+    type="file"
+    id="cardFileInput"
+    accept="image/*"
+    onchange="handleFileSelected(event)"
+    class="hidden"
+  />
+
+  <!-- Hidden Dedicated File Input for PDF / Doc Tool Uploads -->
+  <input
+    type="file"
+    id="docFileInput"
+    accept=".pdf,.doc,.docx,.txt"
+    onchange="handleDocToolFileSelected(event)"
+    class="hidden"
+  />
+
+  <!-- Top Bar -->
+  <header class="h-14 bg-[#0A0A0A] border-b border-[#262626] px-3 sm:px-4 flex items-center justify-between gap-2 shrink-0 z-30">
+    <div class="flex items-center gap-2.5 min-w-0">
+      <a href="index.html" class="flex items-center shrink-0" title="Back to Home">
+        <img src="./assets/Banner.png" alt="boardie logo" class="h-8 sm:h-9 w-auto object-contain" />
+      </a>
+      <span class="text-[#262626]">/</span>
+      <nav id="breadcrumbBar" class="flex items-center gap-1.5 text-xs text-neutral-400 truncate"></nav>
+      <span id="readOnlyBadge" class="hidden text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-[#9333EA]/20 text-[#A855F7] border border-[#9333EA]/40 shrink-0">
+        Read-Only Preview
+      </span>
+    </div>
+
+    <div class="flex items-center gap-2 shrink-0">
+      <!-- Zoom Scrollbar -->
+      <div class="hidden md:flex items-center gap-2 bg-[#171717] border border-[#262626] rounded-lg px-2.5 py-1 text-[11px] text-neutral-400">
+        <span title="Zoom Out">&minus;</span>
+        <input
+          id="zoomSlider"
+          type="range"
+          min="50"
+          max="150"
+          step="5"
+          value="100"
+          oninput="setCanvasZoom(Number(this.value))"
+          aria-label="Canvas Zoom"
+          class="w-20 accent-[#9333EA] cursor-pointer"
+        />
+        <span id="zoomPercentLabel" class="font-mono text-neutral-300 w-9 text-right">100%</span>
+      </div>
+
+      <!-- Share Read-Only Link -->
+      <button
+        onclick="openShareModal()"
+        title="Share read-only board link"
+        class="no-print text-xs bg-[#171717] hover:bg-[#222222] border border-[#262626] text-neutral-200 px-2.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
+      >
+        Share Link
+      </button>
+
+      <!-- Export PDF -->
+      <button
+        onclick="exportBoardPdf()"
+        title="Export current board as a single-page PDF"
+        class="no-print hidden sm:inline-flex text-xs bg-[#171717] hover:bg-[#222222] border border-[#262626] text-neutral-200 px-2.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
+      >
+        Export PDF
+      </button>
+
+      <!-- Bin Drawer Trigger -->
+      <button
+        id="binHeaderBtn"
+        onclick="openBinModal()"
+        title="View deleted items from current board"
+        class="no-print relative text-xs bg-[#171717] hover:bg-[#222222] border border-[#262626] text-neutral-200 px-2.5 py-1.5 rounded-lg transition flex items-center gap-1.5 whitespace-nowrap shrink-0"
+      >
+        <span>Bin</span>
+        <span id="binCountBadge" class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#0A0A0A] text-[#A855F7] border border-[#262626] leading-none">0</span>
+      </button>
+
+      <!-- Clickable Creator / Account Pill -->
+      <button
+        onclick="openAccountModal()"
+        title="Account settings, billing, and plan"
+        class="flex items-center gap-2 bg-[#171717] hover:border-[#9333EA] border border-[#262626] rounded-lg px-2.5 py-1 text-xs transition whitespace-nowrap shrink-0"
+      >
+        <span class="w-1.5 h-1.5 rounded-full bg-[#34D399]"></span>
+        <span id="userNameDisplay" class="text-neutral-200 font-medium">Creator</span>
+      </button>
+
+      <button onclick="logoutStudio()" class="no-print text-xs text-neutral-400 hover:text-white px-2 py-1.5 rounded-lg hover:bg-[#171717] transition whitespace-nowrap shrink-0">
+        Log Out
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Workspace -->
+  <div class="flex-1 flex overflow-hidden relative">
+
+    <!-- Left Tool Rail -->
+    <aside id="leftToolRail" class="no-print w-16 sm:w-20 bg-[#171717] border-r border-[#262626] flex flex-col items-center justify-between py-3 shrink-0 z-20 select-none overflow-y-auto">
+      <div class="flex flex-col items-center gap-2 w-full px-1.5">
+        <button onclick="toggleProjectsPopover()" id="projectsRailBtn" title="Project Boards" class="w-full py-1.5 rounded-xl flex flex-col items-center gap-1 text-neutral-400 hover:text-white hover:bg-[#0A0A0A] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+            <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+            <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+          </svg>
+          <span class="text-[10px] font-medium">Boards</span>
+        </button>
+
+        <div class="w-8 h-px bg-[#262626] my-0.5"></div>
+
+        <!-- Shot Card -->
+        <button
+          draggable="true"
+          ondragstart="handleToolDragStart(event, 'shot')"
+          onclick="createItemAtSpot('shot')"
+          title="Click or drag onto board to add Shot Card"
+          class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-[#A855F7] hover:bg-[#9333EA]/15 cursor-grab active:cursor-grabbing transition"
+        >
+          <svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+            <line x1="2" y1="9" x2="22" y2="9"></line>
+            <line x1="8" y1="4" x2="6" y2="9"></line>
+            <line x1="15" y1="4" x2="13" y2="9"></line>
+          </svg>
+          <span class="text-[10px] font-medium pointer-events-none">Shot</span>
+        </button>
+
+        <!-- Mood Card -->
+        <button
+          draggable="true"
+          ondragstart="handleToolDragStart(event, 'mood')"
+          onclick="createItemAtSpot('mood')"
+          title="Click or drag onto board to add Mood Card"
+          class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-[#34D399] hover:bg-[#10B981]/15 cursor-grab active:cursor-grabbing transition"
+        >
+          <svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+            <polyline points="21 15 16 10 5 21"></polyline>
+          </svg>
+          <span class="text-[10px] font-medium pointer-events-none">Mood</span>
+        </button>
+
+        <!-- Production Note -->
+        <button
+          draggable="true"
+          ondragstart="handleToolDragStart(event, 'note')"
+          onclick="createItemAtSpot('note')"
+          title="Click or drag onto board to add Production Note"
+          class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-[#60A5FA] hover:bg-[#3B82F6]/15 cursor-grab active:cursor-grabbing transition"
+        >
+          <svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+          <span class="text-[10px] font-medium pointer-events-none">Note</span>
+        </button>
+
+        <!-- Dedicated Doc / PDF Upload Tool -->
+        <button
+          draggable="true"
+          ondragstart="handleToolDragStart(event, 'doc')"
+          onclick="startDocUploadTool()"
+          title="Click or drag onto board to upload a PDF, DOC, DOCX, or TXT"
+          class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-sky-300 hover:bg-sky-400/15 cursor-grab active:cursor-grabbing transition"
+        >
+          <svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <span class="text-[10px] font-medium pointer-events-none">Doc</span>
+        </button>
+
+        <!-- Column Tool -->
+        <button
+          draggable="true"
+          ondragstart="handleToolDragStart(event, 'column')"
+          onclick="createItemAtSpot('column')"
+          title="Click or drag onto board to add Column lane"
+          class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-amber-400 hover:bg-amber-400/15 cursor-grab active:cursor-grabbing transition"
+        >
+          <svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="3" width="16" height="18" rx="2"></rect>
+            <line x1="4" y1="9" x2="20" y2="9"></line>
+            <line x1="8" y1="13" x2="16" y2="13"></line>
+            <line x1="8" y1="17" x2="16" y2="17"></line>
+          </svg>
+          <span class="text-[10px] font-medium pointer-events-none">Column</span>
+        </button>
+
+        <!-- To-Do List Tool -->
+        <button
+          draggable="true"
+          ondragstart="handleToolDragStart(event, 'todo')"
+          onclick="createItemAtSpot('todo')"
+          title="Click or drag onto board to add To-Do List"
+          class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-emerald-300 hover:bg-emerald-400/15 cursor-grab active:cursor-grabbing transition"
+        >
+          <svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 11 12 14 22 4"></polyline>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+          </svg>
+          <span class="text-[10px] font-medium pointer-events-none">To-Do</span>
+        </button>
+
+        <!-- Nested Sub-Board -->
+        <button
+          draggable="true"
+          ondragstart="handleToolDragStart(event, 'subboard')"
+          onclick="createItemAtSpot('subboard')"
+          title="Click or drag onto board to add Nested Sub-Board"
+          class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-neutral-300 hover:text-white hover:bg-[#0A0A0A] cursor-grab active:cursor-grabbing transition"
+        >
+          <svg class="w-4 h-4 pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+            <line x1="12" y1="11" x2="12" y2="17"></line>
+            <line x1="9" y1="14" x2="15" y2="14"></line>
+          </svg>
+          <span class="text-[10px] font-medium pointer-events-none">Board</span>
+        </button>
+      </div>
+
+      <div class="w-full px-1.5 pt-2">
+        <button onclick="tidyCanvasLayout()" title="Tidy Cards into Clean Grid" class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-neutral-500 hover:text-neutral-200 hover:bg-[#0A0A0A] transition">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="21" y1="10" x2="3" y2="10"></line>
+            <line x1="21" y1="6" x2="3" y2="6"></line>
+            <line x1="21" y1="14" x2="3" y2="14"></line>
+            <line x1="21" y1="18" x2="3" y2="18"></line>
+          </svg>
+          <span class="text-[10px]">Tidy</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Project Boards Popover -->
+    <div id="projectsPopover" class="hidden absolute top-3 left-20 sm:left-24 z-30 w-72 bg-[#171717] border border-[#262626] rounded-2xl p-4 shadow-2xl space-y-3">
+      <div class="flex items-center justify-between border-b border-[#262626] pb-2.5">
+        <span class="font-heading text-lg text-[#E5E5E5]">PROJECT BOARDS</span>
+        <button onclick="createNewRootProject()" class="text-[11px] font-semibold bg-[#9333EA] hover:bg-[#A855F7] text-white px-2.5 py-1 rounded-lg transition">
+          + New Project
+        </button>
+      </div>
+      <div id="projectBoardsList" class="space-y-1 max-h-64 overflow-y-auto"></div>
+    </div>
+
+    <!-- Spatial Canvas -->
+    <main
+      id="canvasViewport"
+      onclick="closeProjectsPopover()"
+      ondragover="handleCanvasDragOver(event)"
+      ondragleave="handleCanvasDragLeave(event)"
+      ondrop="handleCanvasDrop(event)"
+      class="flex-1 studio-grid overflow-auto relative transition-shadow"
+    >
+      <div class="sticky top-0 left-0 z-10 pointer-events-none px-6 pt-5 pb-3 flex items-baseline justify-between">
+        <div class="pointer-events-auto max-w-xl">
+          <h1
+            id="activeBoardTitle"
+            contenteditable="true"
+            spellcheck="false"
+            onblur="updateBoardMeta('title', this.textContent)"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+            title="Click to rename board"
+            class="font-heading text-3xl sm:text-4xl text-[#E5E5E5] tracking-wide outline-none focus:text-[#A855F7] rounded px-1 -mx-1 transition-colors"
+          >LOADING...</h1>
+          <p
+            id="activeBoardDesc"
+            contenteditable="true"
+            spellcheck="false"
+            onblur="updateBoardMeta('description', this.textContent)"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+            data-placeholder="Add a short shoot note..."
+            title="Click to edit board note"
+            class="text-xs text-neutral-500 mt-0.5 outline-none focus:text-neutral-300 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600"
+          ></p>
+        </div>
+      </div>
+
+      <!-- Zoomable Spatial Surface + Edge Snap & Equal-Spacing Guides -->
+      <div
+        id="spatialSurface"
+        style="transform: scale(1); transform-origin: top left;"
+        class="relative min-w-[1600px] min-h-[1100px] pb-28 transition-transform duration-100"
+      >
+        <div id="guideLayer" class="pointer-events-none absolute inset-0 z-30 hidden">
+          <div id="guideVertical" class="hidden absolute top-0 bottom-0 bg-[#A855F7] shadow-[0_0_8px_rgba(168,85,247,0.75)]"></div>
+          <div id="guideHorizontal" class="hidden absolute left-0 right-0 bg-[#34D399] shadow-[0_0_8px_rgba(52,211,153,0.75)]"></div>
+          <div id="spacingHorizontal" class="hidden absolute h-[2px] bg-amber-400 shadow-[0_0_8px_rgba(251,191,36,0.75)] flex items-center justify-center">
+            <span id="spacingHorizontalLabel" class="px-1.5 py-0.5 rounded bg-[#0A0A0A] border border-amber-400/70 text-[10px] font-mono text-amber-300 leading-none"></span>
+          </div>
+          <div id="spacingVertical" class="hidden absolute w-[2px] bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.75)] flex items-center justify-center">
+            <span id="spacingVerticalLabel" class="px-1.5 py-0.5 rounded bg-[#0A0A0A] border border-sky-400/70 text-[10px] font-mono text-sky-300 leading-none"></span>
+          </div>
+        </div>
+        <div id="itemsContainer" class="relative w-full h-full px-6"></div>
+      </div>
+
+      <div id="emptyCanvasState" class="hidden absolute inset-0 flex items-center justify-center pointer-events-none p-6">
+        <div class="text-center space-y-2 max-w-sm">
+          <p class="font-heading text-3xl text-[#E5E5E5]">OPEN STUDIO CANVAS</p>
+          <p class="text-xs text-neutral-400 leading-relaxed">
+            Click or drag <span class="text-[#A855F7]">Shot</span>, <span class="text-[#34D399]">Mood</span>, <span class="text-[#60A5FA]">Note</span>, <span class="text-sky-300">Doc</span>, <span class="text-amber-400">Column</span>, <span class="text-emerald-300">To-Do</span>, or <span class="text-neutral-200">Board</span> from the left rail onto your table.
+          </p>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Themed Delete Project Board Confirmation Modal -->
+  <div id="deleteConfirmModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-md bg-[#171717] border border-[#262626] rounded-2xl p-6 shadow-2xl space-y-4">
+      <div class="flex items-start justify-between gap-3 border-b border-[#262626] pb-3">
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-red-400">Confirm Deletion</span>
+          <h2 class="font-heading text-2xl text-[#E5E5E5] mt-0.5">DELETE PROJECT BOARD</h2>
+        </div>
+        <button onclick="closeDeleteConfirmModal()" class="text-neutral-400 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
+
+      <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-3.5 space-y-1">
+        <p id="deleteTargetTitle" class="text-sm font-semibold text-white">Untitled Project</p>
+        <p class="text-xs text-neutral-400 leading-relaxed">
+          This permanently removes this project board and any nested sub-boards inside it from your studio.
+        </p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button
+          type="button"
+          onclick="closeDeleteConfirmModal()"
+          class="text-xs bg-[#262626] hover:bg-[#333333] text-neutral-200 px-4 py-2 rounded-xl transition"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onclick="confirmDeleteProjectBoard()"
+          class="text-xs bg-red-600 hover:bg-red-500 text-white font-semibold px-4 py-2 rounded-xl transition"
+        >
+          Delete Project
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bin Modal -->
+  <div id="binModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-[#171717] border border-[#262626] rounded-2xl p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-[#262626] pb-3">
+        <div>
+          <h2 class="font-heading text-2xl text-[#E5E5E5]">BOARD BIN</h2>
+          <p class="text-xs text-neutral-400">Items deleted from this board can be restored or permanently removed.</p>
+        </div>
+        <button onclick="closeModal('binModal')" class="text-neutral-400 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
+      <div id="binItemsList" class="space-y-2 max-h-80 overflow-y-auto"></div>
+      <div class="flex items-center justify-between pt-2 border-t border-[#262626]">
+        <button onclick="emptyBoardBin()" class="text-xs text-red-400 hover:text-red-300 transition">Empty Bin</button>
+        <button onclick="closeModal('binModal')" class="text-xs bg-[#262626] hover:bg-[#333333] text-white px-4 py-2 rounded-xl transition">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Share Read-Only Link Modal -->
+  <div id="shareModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-[#171717] border border-[#262626] rounded-2xl p-6 shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-[#262626] pb-3">
+        <div>
+          <h2 class="font-heading text-2xl text-[#E5E5E5]">READ-ONLY PREVIEW LINK</h2>
+          <p class="text-xs text-neutral-400">Viewers can inspect this board snapshot without editing or deleting items.</p>
+        </div>
+        <button onclick="closeModal('shareModal')" class="text-neutral-400 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
+      <div class="space-y-2">
+        <label for="shareLinkInput" class="block text-xs text-neutral-300">Shareable Read-Only URL</label>
+        <div class="flex gap-2">
+          <input
+            id="shareLinkInput"
+            type="text"
+            readonly
+            class="flex-1 bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs font-mono text-neutral-200"
+          />
+          <button onclick="copyShareLink()" class="bg-[#9333EA] hover:bg-[#A855F7] text-white text-xs font-semibold px-4 py-2 rounded-xl transition shrink-0">
+            Copy Link
+          </button>
+        </div>
+        <p id="shareCopyStatus" class="text-xs text-[#34D399] h-4"></p>
+      </div>
+      <div class="flex justify-end">
+        <button onclick="closeModal('shareModal')" class="text-xs bg-[#262626] hover:bg-[#333333] text-white px-4 py-2 rounded-xl transition">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Themed Agile Single-Page Export PDF Modal -->
+  <div id="exportPdfModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-[#171717] border border-[#262626] rounded-2xl p-6 shadow-2xl space-y-4">
+      <div class="flex items-start justify-between gap-3 border-b border-[#262626] pb-3">
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-[#A855F7]">Single-Page Canvas Export</span>
+          <h2 class="font-heading text-2xl text-[#E5E5E5] mt-0.5">EXPORT BOARD PDF</h2>
+          <p class="text-xs text-neutral-400">Fits your entire canvas onto one agile page and lets you pick the save destination.</p>
+        </div>
+        <button onclick="closeModal('exportPdfModal')" class="text-neutral-400 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
+
+      <!-- File Name & Save Destination -->
+      <div class="space-y-1">
+        <label for="pdfFileNameInput" class="block text-xs text-neutral-300">PDF File Name</label>
+        <div class="flex items-center bg-[#0A0A0A] border border-[#262626] focus-within:border-[#9333EA] rounded-xl px-3 py-2">
+          <input
+            id="pdfFileNameInput"
+            type="text"
+            placeholder="night-shoot-scene-01"
+            class="flex-1 bg-transparent text-xs font-mono text-[#E5E5E5] focus:outline-none"
+          />
+          <span class="text-xs font-mono text-neutral-500 select-none">.pdf</span>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div class="space-y-1">
+          <label for="pdfFramingMode" class="block text-xs text-neutral-300">Canvas Framing</label>
+          <select id="pdfFramingMode" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
+            <option value="tight">Tight Around All Items (1 Page)</option>
+            <option value="full">Full Spatial Canvas Area (1 Page)</option>
+          </select>
+        </div>
+        <div class="space-y-1">
+          <label for="pdfThemeMode" class="block text-xs text-neutral-300">Canvas Surface</label>
+          <select id="pdfThemeMode" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
+            <option value="dark">Studio Dark (#0A0A0A)</option>
+            <option value="light">Clean Light (#FFFFFF)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid sm:grid-cols-2 gap-3">
+        <div class="space-y-1">
+          <label for="pdfMarginInput" class="block text-xs text-neutral-300">Outer Margin / Breathing Room</label>
+          <select id="pdfMarginInput" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
+            <option value="64">Standard (64px)</option>
+            <option value="96" selected>Spacious (96px)</option>
+            <option value="140">Generous Presentation (140px)</option>
+          </select>
+        </div>
+        <div class="space-y-1">
+          <label for="pdfSaveDestination" class="block text-xs text-neutral-300">Save Destination</label>
+          <select id="pdfSaveDestination" onchange="updateExportButtonLabel()" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
+            <option value="downloads" selected>Chrome Downloads (Shows in Widget)</option>
+            <option value="picker">Choose Folder ("Save As" Dialog)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-xs">
+        <span class="text-neutral-400">Board: <strong id="pdfBoardName" class="text-neutral-200 font-medium">—</strong></span>
+        <span id="pdfItemsSummary" class="font-mono text-[11px] text-[#34D399]">0 items</span>
+      </div>
+
+      <p id="exportPdfStatus" class="text-xs text-[#A855F7] min-h-[1rem]"></p>
+
+      <div class="flex items-center justify-end gap-2 pt-1">
+        <button type="button" onclick="closeModal('exportPdfModal')" class="text-xs bg-[#262626] hover:bg-[#333333] text-white px-4 py-2 rounded-xl transition">
+          Cancel
+        </button>
+        <button id="confirmExportPdfBtn" type="button" onclick="generateAgileSinglePagePdf()" class="text-xs bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold px-4 py-2 rounded-xl transition">
+          Download PDF
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Account Settings, Billing & Plan Modal -->
+  <div id="accountModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="w-full max-w-xl bg-[#171717] border border-[#262626] rounded-2xl p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[#262626] pb-3">
+        <div>
+          <h2 class="font-heading text-2xl text-[#E5E5E5]">ACCOUNT, BILLING & PLAN</h2>
+          <p class="text-xs text-neutral-400">Manage your studio profile, active subscription plan, and payment details.</p>
+        </div>
+        <button onclick="closeModal('accountModal')" class="text-neutral-400 hover:text-white text-xl leading-none px-2">&times;</button>
+      </div>
+
+      <!-- Active Plan Card -->
+      <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <span class="text-[10px] font-bold uppercase tracking-wider text-[#A855F7]">Current Plan</span>
+          <p id="currentPlanTitle" class="font-heading text-2xl text-[#E5E5E5] mt-0.5">FREE BETA</p>
+          <p id="currentPlanDetail" class="text-xs text-neutral-400">Core storyboarding canvas, up to 3 active project boards, PDF & link export.</p>
+        </div>
+        <a href="pricing.html" class="bg-[#9333EA] hover:bg-[#A855F7] text-white text-xs font-semibold px-4 py-2.5 rounded-xl transition text-center shrink-0">
+          Compare & Change Plan
+        </a>
+      </div>
+
+      <!-- Account Details Form -->
+      <form onsubmit="saveAccountSettings(event)" class="space-y-4">
+        <div class="grid sm:grid-cols-2 gap-3">
+          <div class="space-y-1">
+            <label for="accNameInput" class="block text-xs text-neutral-300">Display Name / Studio</label>
+            <input id="accNameInput" type="text" required class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-sm text-[#E5E5E5]" />
+          </div>
+          <div class="space-y-1">
+            <label for="accEmailInput" class="block text-xs text-neutral-300">Email Address</label>
+            <input id="accEmailInput" type="email" required class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-sm text-[#E5E5E5]" />
+          </div>
+        </div>
+
+        <div class="border-t border-[#262626] pt-4 space-y-3">
+          <span class="text-xs font-bold uppercase tracking-wider text-[#34D399]">Billing & Payment Details</span>
+          <div class="grid sm:grid-cols-2 gap-3">
+            <div class="space-y-1">
+              <label for="billingMethodInput" class="block text-xs text-neutral-300">Payment Method</label>
+              <select id="billingMethodInput" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-sm text-[#E5E5E5]">
+                <option value="Card •••• 4242">Card •••• 4242</option>
+                <option value="M-Pesa / Mobile Money">M-Pesa / Mobile Money</option>
+                <option value="Bank Transfer / Invoice">Bank Transfer / Invoice</option>
+              </select>
+            </div>
+            <div class="space-y-1">
+              <label for="billingCycleInput" class="block text-xs text-neutral-300">Billing Cycle</label>
+              <select id="billingCycleInput" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-sm text-[#E5E5E5]">
+                <option value="Monthly">Monthly</option>
+                <option value="Annual (Save 20%)">Annual (Save 20%)</option>
+              </select>
+            </div>
+          </div>
+          <div class="space-y-1">
+            <label for="billingAddressInput" class="block text-xs text-neutral-300">Billing Name / Company & Tax Note</label>
+            <input id="billingAddressInput" type="text" placeholder="Studio name, city, or invoice reference" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-sm text-[#E5E5E5]" />
+          </div>
+        </div>
+
+        <div class="flex items-center justify-between pt-2">
+          <span id="accountSaveNotice" class="text-xs text-[#34D399]"></span>
+          <div class="flex gap-2">
+            <button type="button" onclick="closeModal('accountModal')" class="text-xs bg-[#262626] hover:bg-[#333333] text-white px-4 py-2 rounded-xl transition">Cancel</button>
+            <button type="submit" class="text-xs bg-[#9333EA] hover:bg-[#A855F7] text-white font-semibold px-4 py-2 rounded-xl transition">Save Changes</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'boardie_spatial_v5';
+    const USER_KEY = 'boardie_user';
+    const RATIOS = ['16:9', '2.39:1', '1:1', '4:5', '9:16'];
+    let pendingUploadCardId = null;
+    let pendingDocSpot = null;
+    let pendingDeleteBoardId = null;
+    let currentZoom = 1;
+    let isReadOnlyMode = false;
+
+    const PLAN_INFO = {
+      free: {
+        title: 'FREE BETA',
+        detail: 'Core storyboarding canvas, up to 3 active project boards, PDF & read-only link export.'
+      },
+      pro: {
+        title: 'CREATOR PRO',
+        detail: 'Unlimited project boards, high-res reference uploads, extended bin history & custom palettes.'
+      },
+      team: {
+        title: 'STUDIO TEAM',
+        detail: 'Shared production boards, multi-department columns, priority exports & team billing.'
+      }
+    };
+
+    function getUserProfile() {
+      const saved = JSON.parse(localStorage.getItem(USER_KEY) || 'null') || {};
+      return {
+        name: saved.name || 'Creator',
+        email: saved.email || 'creator@boardie.studio',
+        plan: saved.plan || 'free',
+        billingMethod: saved.billingMethod || 'Card •••• 4242',
+        billingCycle: saved.billingCycle || 'Monthly',
+        billingAddress: saved.billingAddress || ''
+      };
+    }
+
+    function saveUserProfile(profile) {
+      localStorage.setItem(USER_KEY, JSON.stringify(profile));
+      document.getElementById('userNameDisplay').textContent = profile.name || 'Creator';
+    }
+
+    function initUser() {
+      const user = getUserProfile();
+      document.getElementById('userNameDisplay').textContent = user.name || 'Creator';
+    }
+
+    function logoutStudio() {
+      localStorage.removeItem(USER_KEY);
+      window.location.href = 'index.html';
+    }
+
+    function getDefaultState() {
+      const rootId = 'board_night_shoot';
+      const subId = 'sub_wardrobe';
+      return {
+        activeBoardId: rootId,
+        boards: {
+          [rootId]: {
+            id: rootId,
+            parentId: null,
+            title: 'Night Shoot — Scene 01',
+            description: 'Moody low-key sequence with rain reflections and framing notes.',
+            subBoards: [{ id: subId, x: 24, y: 16 }],
+            bin: [],
+            cards: [
+              {
+                id: 'c1',
+                type: 'shot',
+                title: 'Shot 01 • Exterior Alley',
+                ratio: '16:9',
+                shotSize: 'Medium Close-Up',
+                lens: '50mm Anamorphic',
+                movement: 'Slow Handheld',
+                notes: 'Wet pavement & neon reflection before subject steps into frame.',
+                attachmentName: '',
+                attachmentType: '',
+                attachmentData: '',
+                x: 300,
+                y: 16
+              },
+              {
+                id: 'c2',
+                type: 'todo',
+                title: 'Pre-Light Checklist',
+                items: [
+                  { id: 't1', text: 'Test 50mm anamorphic focus marks', done: true },
+                  { id: 't2', text: 'Check rain machine water supply', done: false },
+                  { id: 't3', text: 'Confirm talent call time', done: false }
+                ],
+                x: 740,
+                y: 16
+              },
+              {
+                id: 'c3',
+                type: 'column',
+                title: 'Camera & Lighting Column',
+                notes: 'Drag any card or sub-board into this column to group it here.',
+                cards: [],
+                x: 1120,
+                y: 16
+              }
+            ]
+          },
+          [subId]: {
+            id: subId,
+            parentId: rootId,
+            title: 'Wardrobe & Styling',
+            description: 'Textiles and tones for lead character.',
+            subBoards: [],
+            bin: [],
+            cards: [
+              {
+                id: 'c5',
+                type: 'mood',
+                title: 'Waxed Canvas Trench',
+                colors: ['#0A0A0A', '#262626', '#10B981', '#E5E5E5'],
+                notes: 'Upload an image to extract its palette or click any swatch to copy hex.',
+                attachmentName: '',
+                attachmentType: '',
+                attachmentData: '',
+                x: 24,
+                y: 16
+              }
+            ]
+          }
+        }
+      };
+    }
+
+    function loadSharedBoardIfPresent() {
+      const hash = window.location.hash || '';
+      if (!hash.startsWith('#preview=')) return false;
+      try {
+        const encoded = decodeURIComponent(hash.slice('#preview='.length));
+        const jsonStr = decodeURIComponent(escape(atob(encoded)));
+        const payload = JSON.parse(jsonStr);
+        if (payload && payload.board && payload.board.id) {
+          isReadOnlyMode = true;
+          studioState = {
+            activeBoardId: payload.board.id,
+            boards: {
+              [payload.board.id]: {
+                ...payload.board,
+                bin: []
+              }
+            }
+          };
+          return true;
+        }
+      } catch (err) {
+        console.warn('Could not parse shared preview link:', err);
+      }
+      return false;
+    }
+
+    let studioState = getDefaultState();
+    if (!loadSharedBoardIfPresent()) {
+      studioState = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || getDefaultState();
+    }
+
+    function saveState() {
+      if (isReadOnlyMode) return;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(studioState));
+    }
+
+    function applyReadOnlyUI() {
+      const badge = document.getElementById('readOnlyBadge');
+      const rail = document.getElementById('leftToolRail');
+      const binBtn = document.getElementById('binHeaderBtn');
+      if (!isReadOnlyMode) {
+        badge.classList.add('hidden');
+        return;
+      }
+      badge.classList.remove('hidden');
+      rail.classList.add('hidden');
+      binBtn.classList.add('hidden');
+      document.querySelectorAll('[contenteditable="true"]').forEach(el => {
+        el.setAttribute('contenteditable', 'false');
+      });
+    }
+
+    function setCanvasZoom(percent) {
+      const clamped = Math.min(150, Math.max(50, percent));
+      currentZoom = clamped / 100;
+      const surface = document.getElementById('spatialSurface');
+      surface.style.transform = `scale(${currentZoom})`;
+      document.getElementById('zoomPercentLabel').textContent = `${clamped}%`;
+      document.getElementById('zoomSlider').value = String(clamped);
+    }
+
+    function getRootBoards() {
+      return Object.values(studioState.boards).filter(b => b.parentId === null);
+    }
+
+    function getBreadcrumbChain(boardId) {
+      const chain = [];
+      let curr = studioState.boards[boardId];
+      while (curr) {
+        chain.unshift(curr);
+        curr = curr.parentId ? studioState.boards[curr.parentId] : null;
+      }
+      return chain;
+    }
+
+    function selectBoard(boardId) {
+      if (!studioState.boards[boardId]) return;
+      studioState.activeBoardId = boardId;
+      saveState();
+      closeProjectsPopover();
+      renderStudio();
+    }
+
+    function toggleProjectsPopover() {
+      if (isReadOnlyMode) return;
+      document.getElementById('projectsPopover').classList.toggle('hidden');
+    }
+
+    function closeProjectsPopover() {
+      document.getElementById('projectsPopover').classList.add('hidden');
+    }
+
+    function createNewRootProject() {
+      if (isReadOnlyMode) return;
+      const newId = 'board_' + Date.now();
+      const count = getRootBoards().length + 1;
+      studioState.boards[newId] = {
+        id: newId,
+        parentId: null,
+        title: `Untitled Project 0${count}`,
+        description: '',
+        subBoards: [],
+        bin: [],
+        cards: []
+      };
+      studioState.activeBoardId = newId;
+      saveState();
+      closeProjectsPopover();
+      renderStudio();
+    }
+
+    function deleteProjectBoard(boardId) {
+      if (isReadOnlyMode) return;
+      const roots = getRootBoards();
+      if (roots.length <= 1) return;
+      const target = studioState.boards[boardId];
+      if (!target) return;
+
+      pendingDeleteBoardId = boardId;
+      document.getElementById('deleteTargetTitle').textContent = target.title || 'Untitled Project';
+      document.getElementById('deleteConfirmModal').classList.remove('hidden');
+    }
+
+    function closeDeleteConfirmModal() {
+      pendingDeleteBoardId = null;
+      document.getElementById('deleteConfirmModal').classList.add('hidden');
+    }
+
+    function confirmDeleteProjectBoard() {
+      const boardId = pendingDeleteBoardId;
+      closeDeleteConfirmModal();
+      if (!boardId || isReadOnlyMode) return;
+
+      const roots = getRootBoards();
+      if (roots.length <= 1 || !studioState.boards[boardId]) return;
+
+      Object.keys(studioState.boards).forEach(id => {
+        if (id === boardId || studioState.boards[id].parentId === boardId) {
+          delete studioState.boards[id];
+        }
+      });
+
+      const currentChainRoot = getBreadcrumbChain(studioState.activeBoardId)[0]?.id;
+      if (!currentChainRoot || currentChainRoot === boardId) {
+        const remainingRoots = getRootBoards();
+        studioState.activeBoardId = remainingRoots[0]?.id || null;
+      }
+
+      saveState();
+      closeProjectsPopover();
+      renderStudio();
+    }
+
+    let draggedToolType = null;
+
+    function handleToolDragStart(event, type) {
+      if (isReadOnlyMode) return;
+      draggedToolType = type;
+      event.dataTransfer.setData('text/plain', type);
+      event.dataTransfer.effectAllowed = 'copy';
+    }
+
+    function handleCanvasDragOver(event) {
+      if (isReadOnlyMode || !draggedToolType) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      document.getElementById('canvasViewport').classList.add('ring-2', 'ring-inset', 'ring-[#9333EA]/50');
+    }
+
+    function handleCanvasDragLeave(event) {
+      if (event.currentTarget.contains(event.relatedTarget)) return;
+      document.getElementById('canvasViewport').classList.remove('ring-2', 'ring-inset', 'ring-[#9333EA]/50');
+    }
+
+    function handleCanvasDrop(event) {
+      if (isReadOnlyMode) return;
+      event.preventDefault();
+      document.getElementById('canvasViewport').classList.remove('ring-2', 'ring-inset', 'ring-[#9333EA]/50');
+      const type = draggedToolType || event.dataTransfer.getData('text/plain');
+      draggedToolType = null;
+      if (!type) return;
+
+      const surface = document.getElementById('spatialSurface');
+      const rect = surface.getBoundingClientRect();
+      const dropX = Math.max(16, Math.round((event.clientX - rect.left) / currentZoom - 120));
+      const dropY = Math.max(12, Math.round((event.clientY - rect.top) / currentZoom - 24));
+
+      if (type === 'doc') {
+        startDocUploadTool({ x: dropX, y: dropY });
+      } else {
+        createItemAtSpot(type, { x: dropX, y: dropY });
+      }
+    }
+
+    function getNextSpot(board) {
+      const count = (board.subBoards?.length || 0) + (board.cards?.length || 0);
+      return {
+        x: 24 + (count % 3) * 420,
+        y: 16 + Math.floor(count / 3) * 440
+      };
+    }
+
+    function createItemAtSpot(type, customSpot = null) {
+      if (isReadOnlyMode) return;
+      if (type === 'doc') {
+        startDocUploadTool(customSpot);
+        return;
+      }
+      closeProjectsPopover();
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+
+      const spot = customSpot || getNextSpot(board);
+      let createdId = null;
+
+      if (type === 'subboard') {
+        const newId = 'board_' + Date.now();
+        const subCount = (board.subBoards?.length || 0) + 1;
+        studioState.boards[newId] = {
+          id: newId,
+          parentId: board.id,
+          title: `Scene / Sub-Board 0${subCount}`,
+          description: '',
+          subBoards: [],
+          bin: [],
+          cards: []
+        };
+        board.subBoards.push({ id: newId, x: spot.x, y: spot.y });
+        createdId = newId;
+      } else {
+        const newId = 'card_' + Date.now();
+        const shotCount = board.cards.filter(c => c.type === 'shot').length + 1;
+        const baseCard = {
+          id: newId,
+          type,
+          x: spot.x,
+          y: spot.y,
+          attachmentName: '',
+          attachmentType: '',
+          attachmentData: ''
+        };
+
+        if (type === 'shot') {
+          baseCard.title = `Shot 0${shotCount} • Untitled Frame`;
+          baseCard.ratio = '16:9';
+          baseCard.shotSize = 'Medium Shot';
+          baseCard.lens = '35mm Prime';
+          baseCard.movement = 'Static';
+          baseCard.notes = 'Click to add shot description, action, or framing cues...';
+        } else if (type === 'mood') {
+          baseCard.title = 'New Mood Reference';
+          baseCard.colors = ['#0A0A0A', '#10B981', '#34D399', '#9333EA', '#E5E5E5'];
+          baseCard.notes = 'Upload an image to extract colors or click swatches to copy hex.';
+        } else if (type === 'todo') {
+          baseCard.title = 'Production To-Do List';
+          baseCard.items = [
+            { id: 'todo_' + Date.now(), text: 'First task item', done: false }
+          ];
+        } else if (type === 'column') {
+          baseCard.title = 'New Column';
+          baseCard.notes = 'Drag any card or sub-board into this column to group it here.';
+          baseCard.cards = [];
+        } else {
+          baseCard.title = 'Production Note';
+          baseCard.notes = 'Click to write a call-sheet reminder or cue...';
+        }
+
+        board.cards.push(baseCard);
+        createdId = newId;
+      }
+
+      saveState();
+      renderStudio();
+
+      requestAnimationFrame(() => {
+        const titleEl = document.querySelector(`[data-focus-id="${createdId}"]`);
+        if (titleEl) {
+          titleEl.focus();
+          document.execCommand('selectAll', false, null);
+        }
+      });
+    }
+
+    function startDocUploadTool(customSpot = null) {
+      if (isReadOnlyMode) return;
+      closeProjectsPopover();
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      pendingDocSpot = customSpot || getNextSpot(board);
+      const input = document.getElementById('docFileInput');
+      input.value = '';
+      input.click();
+    }
+
+    function handleDocToolFileSelected(event) {
+      const file = event.target.files?.[0];
+      const spot = pendingDocSpot;
+      pendingDocSpot = null;
+      if (!file) return;
+
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+
+      const targetSpot = spot || getNextSpot(board);
+      const reader = new FileReader();
+      reader.onload = () => {
+        const newId = 'card_' + Date.now();
+        board.cards.push({
+          id: newId,
+          type: 'doc',
+          title: file.name,
+          attachmentName: file.name,
+          attachmentType: file.type || 'application/octet-stream',
+          attachmentData: reader.result,
+          notes: 'Attached production document or PDF.',
+          x: targetSpot.x,
+          y: targetSpot.y
+        });
+        saveState();
+        renderStudio();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function moveItemIntoColumn(kind, id, columnCardId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      const columnCard = board.cards.find(c => c.id === columnCardId && c.type === 'column');
+      if (!columnCard) return;
+      columnCard.cards = columnCard.cards || [];
+
+      if (kind === 'subboard') {
+        const refIdx = (board.subBoards || []).findIndex(s => s.id === id);
+        if (refIdx === -1) return;
+        const [ref] = board.subBoards.splice(refIdx, 1);
+        const sub = studioState.boards[id];
+        if (!sub) return;
+        columnCard.cards.push({
+          id: 'nested_sub_' + Date.now(),
+          kind: 'subboard',
+          subId: id,
+          title: sub.title,
+          cardCount: sub.cards?.length || 0,
+          x: ref.x,
+          y: ref.y
+        });
+      } else {
+        if (id === columnCardId) return;
+        const idx = (board.cards || []).findIndex(c => c.id === id);
+        if (idx === -1) return;
+        const [movedCard] = board.cards.splice(idx, 1);
+        columnCard.cards.push({
+          ...movedCard,
+          kind: 'card'
+        });
+      }
+
+      saveState();
+      renderStudio();
+    }
+
+    function transferNestedItemBetweenColumns(sourceColumnId, nestedId, targetColumnId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      const sourceCol = board.cards.find(c => c.id === sourceColumnId && c.type === 'column');
+      const targetCol = board.cards.find(c => c.id === targetColumnId && c.type === 'column');
+      if (!sourceCol || !targetCol || !Array.isArray(sourceCol.cards)) return;
+
+      const idx = sourceCol.cards.findIndex(item => item.id === nestedId);
+      if (idx === -1) return;
+      const [item] = sourceCol.cards.splice(idx, 1);
+
+      if (sourceColumnId === targetColumnId) {
+        sourceCol.cards.push(item);
+      } else {
+        targetCol.cards = targetCol.cards || [];
+        targetCol.cards.push(item);
+      }
+
+      saveState();
+      renderStudio();
+    }
+
+    function popOutColumnItem(columnCardId, nestedId, dropSpot = null) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const columnCard = board?.cards.find(c => c.id === columnCardId && c.type === 'column');
+      if (!columnCard || !columnCard.cards) return;
+      const idx = columnCard.cards.findIndex(item => item.id === nestedId);
+      if (idx === -1) return;
+      const [item] = columnCard.cards.splice(idx, 1);
+      const spot = dropSpot || getNextSpot(board);
+
+      if (item.kind === 'subboard' && item.subId && studioState.boards[item.subId]) {
+        board.subBoards = board.subBoards || [];
+        board.subBoards.push({ id: item.subId, x: spot.x, y: spot.y });
+      } else {
+        const { kind, ...rest } = item;
+        board.cards.push({
+          ...rest,
+          x: spot.x,
+          y: spot.y
+        });
+      }
+
+      saveState();
+      renderStudio();
+    }
+
+    function reorderColumnItem(columnCardId, nestedId, direction) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const columnCard = board?.cards.find(c => c.id === columnCardId && c.type === 'column');
+      if (!columnCard || !Array.isArray(columnCard.cards)) return;
+      const idx = columnCard.cards.findIndex(item => item.id === nestedId);
+      if (idx === -1) return;
+      const targetIdx = idx + direction;
+      if (targetIdx < 0 || targetIdx >= columnCard.cards.length) return;
+      const [item] = columnCard.cards.splice(idx, 1);
+      columnCard.cards.splice(targetIdx, 0, item);
+      saveState();
+      renderStudio();
+    }
+
+    function deleteColumnItem(columnCardId, nestedId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const columnCard = board?.cards.find(c => c.id === columnCardId && c.type === 'column');
+      if (!columnCard || !Array.isArray(columnCard.cards)) return;
+      const idx = columnCard.cards.findIndex(item => item.id === nestedId);
+      if (idx === -1) return;
+      const [removed] = columnCard.cards.splice(idx, 1);
+      board.bin = board.bin || [];
+      board.bin.unshift({
+        binId: 'bin_' + Date.now(),
+        kind: removed.kind === 'subboard' ? 'subboard' : 'card',
+        deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        data: { ...removed, attachmentData: '' }
+      });
+      saveState();
+      renderStudio();
+    }
+
+    function renderColumnNestedItems(columnCard) {
+      const items = columnCard.cards || [];
+      if (items.length === 0) {
+        return `<div class="rounded-xl border border-dashed border-[#262626] p-3 text-center text-[11px] text-neutral-500 select-none">Drop Shot, Mood, Note, Doc, To-Do, or Sub-Board here</div>`;
+      }
+
+      return items.map((item, idx) => {
+        const badgeColor =
+          item.kind === 'subboard' ? 'text-[#60A5FA]' :
+          item.type === 'shot' ? 'text-[#A855F7]' :
+          item.type === 'mood' ? 'text-[#34D399]' :
+          item.type === 'doc' ? 'text-sky-300' :
+          item.type === 'todo' ? 'text-emerald-300' :
+          'text-[#60A5FA]';
+
+        const label =
+          item.kind === 'subboard' ? 'Sub-Board' :
+          item.type === 'shot' ? `Shot (${item.ratio || '16:9'})` :
+          item.type === 'mood' ? 'Mood' :
+          item.type === 'doc' ? 'Document' :
+          item.type === 'todo' ? `To-Do (${(item.items || []).length})` :
+          'Note';
+
+        return `
+          <div
+            data-column-id="${columnCard.id}"
+            data-nested-id="${item.id}"
+            class="column-nested-item bg-[#0A0A0A] border border-[#262626] rounded-xl p-2.5 space-y-1.5"
+          >
+            <div class="nested-drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-1 text-[10px] select-none" title="Drag to move into another column or onto canvas">
+              <span class="font-bold uppercase tracking-wider ${badgeColor} whitespace-nowrap">&#8942;&#8942; ${escapeHtml(label)}</span>
+              ${!isReadOnlyMode ? `
+                <div class="flex items-center gap-1 text-neutral-500 shrink-0">
+                  <button onclick="reorderColumnItem('${columnCard.id}', '${item.id}', -1)" ${idx === 0 ? 'disabled' : ''} title="Move up" class="hover:text-white disabled:opacity-30 px-1">&uarr;</button>
+                  <button onclick="reorderColumnItem('${columnCard.id}', '${item.id}', 1)" ${idx === items.length - 1 ? 'disabled' : ''} title="Move down" class="hover:text-white disabled:opacity-30 px-1">&darr;</button>
+                  <button onclick="popOutColumnItem('${columnCard.id}', '${item.id}')" title="Move back to canvas" class="hover:text-amber-300 px-1 whitespace-nowrap">Pop Out</button>
+                  <button onclick="deleteColumnItem('${columnCard.id}', '${item.id}')" title="Move to Bin" class="hover:text-red-400 px-1">&times;</button>
+                </div>
+              ` : ''}
+            </div>
+            <p class="text-xs font-medium text-[#E5E5E5] truncate">${escapeHtml(item.title || 'Untitled')}</p>
+            ${item.attachmentData && (item.attachmentType || '').startsWith('image/') ? `
+              <img src="${item.attachmentData}" alt="${escapeHtml(item.title || '')}" class="w-full h-20 object-cover rounded-lg border border-[#262626]" />
+            ` : ''}
+            ${item.notes ? `<p class="text-[11px] text-neutral-400 line-clamp-2">${escapeHtml(item.notes)}</p>` : ''}
+            ${item.kind === 'subboard' && item.subId ? `
+              <button onclick="selectBoard('${item.subId}')" class="text-[10px] text-[#60A5FA] hover:underline">Open Sub-Board &rarr;</button>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderResizeHandles() {
+      if (isReadOnlyMode) return '';
+      return `
+        <span class="resize-handle" data-dir="nw" title="Drag corner to resize • Double-click to reset"></span>
+        <span class="resize-handle" data-dir="ne" title="Drag corner to resize • Double-click to reset"></span>
+        <span class="resize-handle" data-dir="sw" title="Drag corner to resize • Double-click to reset"></span>
+        <span class="resize-handle" data-dir="se" title="Drag corner to resize • Double-click to reset"></span>
+      `;
+    }
+
+    function getItemSizeStyle(item) {
+      const w = item?.width ? `width:${Math.round(item.width)}px; max-width:none;` : '';
+      const h = item?.height ? `height:${Math.round(item.height)}px; min-height:0;` : '';
+      return `${w}${h}`;
+    }
+
+    function updateBoardMeta(field, value) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      const cleaned = value.trim();
+      if (field === 'title' && !cleaned) {
+        renderStudio();
+        return;
+      }
+      board[field] = cleaned;
+      saveState();
+      renderStudio();
+    }
+
+    function updateSubBoardTitle(subId, value) {
+      if (isReadOnlyMode) return;
+      const sub = studioState.boards[subId];
+      if (!sub) return;
+      const cleaned = value.trim();
+      if (cleaned) {
+        sub.title = cleaned;
+        saveState();
+      }
+      renderStudio();
+    }
+
+    function updateCardField(cardId, field, value) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      const card = board.cards.find(c => c.id === cardId);
+      if (!card) return;
+
+      if (field === 'colors') {
+        const parsed = value.split(',').map(s => s.trim()).filter(Boolean).slice(0, 6);
+        if (parsed.length > 0) card.colors = parsed;
+      } else {
+        const cleaned = value.trim();
+        if (field === 'title' && !cleaned) {
+          renderStudio();
+          return;
+        }
+        card[field] = cleaned;
+      }
+
+      saveState();
+      renderStudio();
+    }
+
+    function copyMoodSwatch(hex, el) {
+      navigator.clipboard?.writeText(hex);
+      const prevTitle = el.title;
+      el.title = `Copied ${hex}!`;
+      el.classList.add('ring-2', 'ring-white');
+      setTimeout(() => {
+        el.title = prevTitle;
+        el.classList.remove('ring-2', 'ring-white');
+      }, 1200);
+    }
+
+    function extractColorsFromDataUrl(dataUrl, swatchCount = 5) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const size = 64;
+          canvas.width = size;
+          canvas.height = size;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return resolve(['#0A0A0A', '#10B981', '#34D399', '#9333EA', '#E5E5E5']);
+
+          ctx.drawImage(img, 0, 0, size, size);
+          const { data } = ctx.getImageData(0, 0, size, size);
+          const buckets = new Map();
+
+          for (let i = 0; i < data.length; i += 4) {
+            const r = data[i];
+            const g = data[i + 1];
+            const b = data[i + 2];
+            const a = data[i + 3];
+            if (a < 128) continue;
+
+            const rq = Math.min(255, Math.round(r / 24) * 24);
+            const gq = Math.min(255, Math.round(g / 24) * 24);
+            const bq = Math.min(255, Math.round(b / 24) * 24);
+            const key = `${rq},${gq},${bq}`;
+            buckets.set(key, (buckets.get(key) || 0) + 1);
+          }
+
+          const sorted = Array.from(buckets.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([rgbStr]) => {
+              const [r, g, b] = rgbStr.split(',').map(Number);
+              return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
+            });
+
+          const picked = [];
+          for (const hex of sorted) {
+            if (!picked.includes(hex)) {
+              picked.push(hex);
+            }
+            if (picked.length >= swatchCount) break;
+          }
+
+          const fallback = ['#0A0A0A', '#262626', '#10B981', '#9333EA', '#E5E5E5'];
+          while (picked.length < swatchCount) {
+            const next = fallback[picked.length % fallback.length];
+            if (!picked.includes(next)) picked.push(next);
+            else picked.push(fallback[picked.length]);
+          }
+
+          resolve(picked.slice(0, swatchCount));
+        };
+        img.onerror = () => resolve(['#0A0A0A', '#10B981', '#34D399', '#9333EA', '#E5E5E5']);
+        img.src = dataUrl;
+      });
+    }
+
+    function toggleTodoItem(cardId, itemId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const card = board?.cards.find(c => c.id === cardId);
+      const item = card?.items?.find(i => i.id === itemId);
+      if (!item) return;
+      item.done = !item.done;
+      saveState();
+      renderStudio();
+    }
+
+    function updateTodoText(cardId, itemId, text) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const card = board?.cards.find(c => c.id === cardId);
+      const item = card?.items?.find(i => i.id === itemId);
+      if (!item) return;
+      item.text = text.trim() || 'Untitled task';
+      saveState();
+    }
+
+    function addTodoItem(cardId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const card = board?.cards.find(c => c.id === cardId);
+      if (!card) return;
+      card.items = card.items || [];
+      card.items.push({ id: 'todo_' + Date.now(), text: 'New task', done: false });
+      saveState();
+      renderStudio();
+    }
+
+    function removeTodoItem(cardId, itemId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const card = board?.cards.find(c => c.id === cardId);
+      if (!card || !card.items) return;
+      card.items = card.items.filter(i => i.id !== itemId);
+      saveState();
+      renderStudio();
+    }
+
+    function triggerCardUpload(cardId) {
+      if (isReadOnlyMode) return;
+      pendingUploadCardId = cardId;
+      const input = document.getElementById('cardFileInput');
+      input.value = '';
+      input.click();
+    }
+
+    function handleFileSelected(event) {
+      const file = event.target.files?.[0];
+      const cardId = pendingUploadCardId;
+      pendingUploadCardId = null;
+      if (!file || !cardId) return;
+
+      const board = studioState.boards[studioState.activeBoardId];
+      const card = board?.cards.find(c => c.id === cardId);
+      if (!card) return;
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const mimeType = file.type || 'application/octet-stream';
+        const isImage = mimeType.startsWith('image/');
+
+        card.attachmentName = file.name;
+        card.attachmentType = mimeType;
+        card.attachmentData = reader.result;
+
+        if (card.type === 'mood' && isImage) {
+          card.colors = await extractColorsFromDataUrl(card.attachmentData, 5);
+        }
+
+        saveState();
+        renderStudio();
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function clearCardAttachment(cardId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const card = board?.cards.find(c => c.id === cardId);
+      if (!card) return;
+      card.attachmentName = '';
+      card.attachmentType = '';
+      card.attachmentData = '';
+      saveState();
+      renderStudio();
+    }
+
+    function renderAttachmentBlock(card) {
+      if (!card.attachmentData) return '';
+      const isImage = (card.attachmentType || '').startsWith('image/');
+      if (isImage) {
+        return `
+          <div class="relative rounded-xl overflow-hidden border border-[#262626] bg-[#0A0A0A]">
+            <img src="${card.attachmentData}" alt="${escapeHtml(card.attachmentName || 'Reference')}" class="w-full max-h-48 object-cover" />
+            <div class="flex items-center justify-between px-2.5 py-1.5 bg-[#0A0A0A]/90 text-[10px] text-neutral-300">
+              <span class="truncate">${escapeHtml(card.attachmentName)}</span>
+              ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="text-red-400 hover:text-red-300 ml-2 shrink-0 whitespace-nowrap">Remove</button>` : ''}
+            </div>
+          </div>
+        `;
+      }
+
+      return `
+        <div class="flex items-center justify-between gap-2 bg-[#0A0A0A] border border-[#262626] rounded-xl px-3 py-2 text-xs">
+          <a href="${card.attachmentData}" download="${escapeHtml(card.attachmentName || 'file')}" class="text-sky-300 hover:underline truncate">
+            &#128196; ${escapeHtml(card.attachmentName || 'Attached Document')}
+          </a>
+          ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="text-[11px] text-red-400 hover:text-red-300 shrink-0">&times;</button>` : ''}
+        </div>
+      `;
+    }
+
+    function cycleShotRatio(cardId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const card = board?.cards.find(c => c.id === cardId);
+      if (!card) return;
+      const idx = RATIOS.indexOf(card.ratio || '16:9');
+      card.ratio = RATIOS[(idx + 1) % RATIOS.length];
+      saveState();
+      renderStudio();
+    }
+
+    function getShotFrameClasses(ratio) {
+      switch (ratio) {
+        case '2.39:1':
+          return 'w-full aspect-[21/9] max-h-[240px]';
+        case '1:1':
+          return 'w-56 aspect-square max-w-full max-h-[260px]';
+        case '4:5':
+          return 'w-48 aspect-[4/5] max-w-full max-h-[280px]';
+        case '9:16':
+          return 'w-40 aspect-[9/16] max-w-full max-h-[290px]';
+        default:
+          return 'w-full aspect-video max-h-[250px]';
+      }
+    }
+
+    function renderStudio() {
+      const activeBoard = studioState.boards[studioState.activeBoardId] || Object.values(studioState.boards)[0];
+      if (!activeBoard) return;
+      studioState.activeBoardId = activeBoard.id;
+      activeBoard.bin = activeBoard.bin || [];
+      document.getElementById('binCountBadge').textContent = String(activeBoard.bin.length);
+
+      const topRootId = getBreadcrumbChain(activeBoard.id)[0]?.id;
+      const rootBoards = getRootBoards();
+      const canDeleteRoot = rootBoards.length > 1 && !isReadOnlyMode;
+
+      document.getElementById('projectBoardsList').innerHTML = rootBoards.map(b => {
+        const active = b.id === topRootId;
+        return `
+          <div class="flex items-center justify-between gap-1.5 rounded-xl px-2 py-1 transition ${
+            active ? 'bg-[#9333EA]/15 text-white font-semibold' : 'text-neutral-400 hover:text-white hover:bg-[#0A0A0A]'
+          }">
+            <button onclick="selectBoard('${b.id}')" class="flex-1 min-w-0 text-left px-1 py-1 text-xs flex items-center justify-between gap-2">
+              <span class="truncate">${escapeHtml(b.title)}</span>
+              <span class="text-[10px] text-neutral-500 shrink-0">${b.cards.length}</span>
+            </button>
+            ${canDeleteRoot ? `
+              <button
+                type="button"
+                onclick="event.stopPropagation(); deleteProjectBoard('${b.id}')"
+                title="Delete project board"
+                class="text-[11px] text-neutral-500 hover:text-red-400 px-1.5 py-1 rounded transition shrink-0"
+              >
+                Delete
+              </button>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      const chain = getBreadcrumbChain(activeBoard.id);
+      document.getElementById('breadcrumbBar').innerHTML = chain.map((item, idx) => {
+        const isLast = idx === chain.length - 1;
+        return `
+          ${idx > 0 ? '<span class="text-neutral-600">/</span>' : ''}
+          <button onclick="selectBoard('${item.id}')" class="truncate max-w-[150px] ${isLast ? 'text-[#E5E5E5] font-medium' : 'hover:text-white transition'}">
+            ${escapeHtml(item.title)}
+          </button>
+        `;
+      }).join('');
+
+      document.getElementById('activeBoardTitle').textContent = activeBoard.title;
+      document.getElementById('activeBoardDesc').textContent = activeBoard.description || '';
+
+      const container = document.getElementById('itemsContainer');
+      const emptyState = document.getElementById('emptyCanvasState');
+      const subItems = activeBoard.subBoards || [];
+      const cards = activeBoard.cards || [];
+
+      if (subItems.length === 0 && cards.length === 0) {
+        container.innerHTML = '';
+        emptyState.classList.remove('hidden');
+        applyReadOnlyUI();
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+      let html = '';
+
+      subItems.forEach(ref => {
+        const sub = studioState.boards[ref.id];
+        if (!sub) return;
+        html += `
+          <div
+            data-kind="subboard"
+            data-id="${sub.id}"
+            ondblclick="selectBoard('${sub.id}')"
+            style="left: ${ref.x}px; top: ${ref.y}px; ${getItemSizeStyle(ref)}"
+            class="canvas-item group absolute w-60 bg-[#171717] border border-[#262626] hover:border-[#60A5FA] rounded-2xl p-4 shadow-2xl transition-colors"
+          >
+            ${renderResizeHandles()}
+            <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between mb-2 select-none">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-[#60A5FA] whitespace-nowrap">Sub-Board</span>
+              <div class="flex items-center gap-2 shrink-0">
+                <button onclick="event.stopPropagation(); selectBoard('${sub.id}')" class="text-[10px] text-neutral-400 hover:text-white whitespace-nowrap">Open &rarr;</button>
+                <button onclick="event.stopPropagation(); deleteSubBoard('${sub.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition">&times;</button>
+              </div>
+            </div>
+            <h3
+              data-focus-id="${sub.id}"
+              contenteditable="true"
+              spellcheck="false"
+              ondblclick="event.stopPropagation()"
+              onblur="updateSubBoardTitle('${sub.id}', this.textContent)"
+              onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+              class="font-heading text-xl text-[#E5E5E5] leading-tight outline-none focus:text-[#60A5FA] rounded px-1 -mx-1"
+            >${escapeHtml(sub.title)}</h3>
+            <p class="text-[11px] text-neutral-500 mt-1 select-none">${sub.cards.length} item(s)</p>
+          </div>
+        `;
+      });
+
+      cards.forEach(card => {
+        if (card.type === 'shot') {
+          const shotVisual = card.attachmentData && (card.attachmentType || '').startsWith('image/')
+            ? `<div class="${getShotFrameClasses(card.ratio)} rounded-xl overflow-hidden border border-[#262626]"><img src="${card.attachmentData}" alt="${escapeHtml(card.title)}" class="w-full h-full object-cover" /></div>`
+            : `<div class="${getShotFrameClasses(card.ratio)} rounded-xl bg-gradient-to-tr from-[#0A0A0A] via-[#9333EA]/25 to-[#3B82F6]/20 border border-[#262626] flex flex-col items-center justify-center p-3.5 text-center transition-colors">
+                <span
+                  data-focus-id="${card.id}"
+                  contenteditable="true"
+                  spellcheck="false"
+                  onblur="updateCardField('${card.id}', 'title', this.textContent)"
+                  onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                  class="text-xs font-semibold text-[#A855F7] uppercase tracking-wider leading-snug outline-none focus:text-white rounded px-1"
+                >${escapeHtml(card.title)}</span>
+                <span class="text-[11px] text-neutral-400 mt-1.5 leading-snug select-none whitespace-nowrap">${escapeHtml(card.ratio || '16:9')} Frame</span>
+              </div>`;
+
+          html += `
+            <article
+              data-kind="card"
+              data-id="${card.id}"
+              style="left: ${card.x}px; top: ${card.y}px; ${getItemSizeStyle(card)}"
+              class="canvas-item group absolute w-[400px] max-w-[calc(100vw-6rem)] bg-[#171717] border border-[#262626] hover:border-[#9333EA]/60 rounded-2xl p-4 shadow-2xl transition-colors space-y-3"
+            >
+              ${renderResizeHandles()}
+              <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none">
+                <span class="text-xs font-bold uppercase tracking-wider text-[#A855F7] whitespace-nowrap shrink-0">Shot Card</span>
+                <div class="flex items-center gap-1.5 pr-0.5 shrink-0">
+                  <button
+                    type="button"
+                    onclick="triggerCardUpload('${card.id}')"
+                    title="Attach reference image"
+                    class="inline-flex items-center justify-center px-2.5 py-1.5 rounded text-[11px] font-medium bg-[#0A0A0A] hover:bg-[#222222] text-neutral-200 border border-[#262626] whitespace-nowrap shrink-0"
+                  ><span class="leading-none">+ File</span></button>
+                  <button
+                    type="button"
+                    onclick="cycleShotRatio('${card.id}')"
+                    title="Cycle aspect ratio"
+                    class="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold bg-[#9333EA]/15 hover:bg-[#9333EA]/30 text-[#A855F7] border border-[#9333EA]/40 transition-colors whitespace-nowrap shrink-0"
+                  ><span class="leading-none">${escapeHtml(card.ratio || '16:9')}</span><svg class="w-3 h-3 block shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
+                  <button
+                    type="button"
+                    onclick="deleteCard('${card.id}')"
+                    title="Move to Bin"
+                    class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0 px-1"
+                  >&times;</button>
+                </div>
+              </div>
+
+              <div class="bg-[#0A0A0A]/50 border border-[#262626]/60 rounded-xl p-3 min-h-[140px] flex items-center justify-center">
+                ${shotVisual}
+              </div>
+
+              ${card.attachmentData && !(card.attachmentType || '').startsWith('image/') ? renderAttachmentBlock(card) : ''}
+
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <div class="shot-meta-box bg-[#0A0A0A] border border-[#262626] rounded-lg px-2.5 py-2">
+                  <span class="block text-[10px] text-neutral-500 uppercase leading-tight select-none">Shot Size</span>
+                  <span contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'shotSize', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="shot-meta-value text-[#E5E5E5] font-medium leading-tight outline-none focus:text-[#A855F7] block truncate rounded mt-0.5">${escapeHtml(card.shotSize || 'Medium Shot')}</span>
+                </div>
+                <div class="shot-meta-box bg-[#0A0A0A] border border-[#262626] rounded-lg px-2.5 py-2">
+                  <span class="block text-[10px] text-neutral-500 uppercase leading-tight select-none">Lens</span>
+                  <span contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'lens', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="shot-meta-value text-[#E5E5E5] font-medium leading-tight outline-none focus:text-[#A855F7] block truncate rounded mt-0.5">${escapeHtml(card.lens || '35mm Prime')}</span>
+                </div>
+                <div class="shot-meta-box bg-[#0A0A0A] border border-[#262626] rounded-lg px-2.5 py-2">
+                  <span class="block text-[10px] text-neutral-500 uppercase leading-tight select-none">Movement</span>
+                  <span contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'movement', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="shot-meta-value text-[#E5E5E5] font-medium leading-tight outline-none focus:text-[#A855F7] block truncate rounded mt-0.5">${escapeHtml(card.movement || 'Static')}</span>
+                </div>
+              </div>
+
+              <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Add shot description, action, or cue..." class="text-xs text-neutral-400 leading-relaxed outline-none focus:text-neutral-200 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
+            </article>
+          `;
+        } else if (card.type === 'mood') {
+          const hasMoodImage = Boolean(card.attachmentData && (card.attachmentType || '').startsWith('image/'));
+          const moodFrame = hasMoodImage
+            ? `<div class="relative aspect-[16/10] rounded-xl overflow-hidden border border-[#262626] bg-[#0A0A0A]">
+                <img src="${card.attachmentData}" alt="${escapeHtml(card.title)}" class="w-full h-full object-cover" />
+                <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/45 to-transparent p-2.5 flex items-end justify-between gap-2">
+                  <span data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-base text-white leading-tight outline-none focus:text-[#34D399] rounded px-1 truncate">${escapeHtml(card.title)}</span>
+                  ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="text-[10px] leading-none text-neutral-300 hover:text-red-400 bg-black/60 px-2 py-1 rounded shrink-0 whitespace-nowrap">Clear</button>` : ''}
+                </div>
+              </div>`
+            : `<div
+                ${!isReadOnlyMode ? `ondblclick="triggerCardUpload('${card.id}')"` : ''}
+                title="Upload an image to draw palette swatches"
+                class="aspect-[16/10] rounded-xl bg-gradient-to-br from-[#10B981]/20 via-[#0A0A0A] to-[#9333EA]/15 border border-dashed border-[#262626] hover:border-[#34D399]/60 flex flex-col items-center justify-center p-3 text-center transition cursor-pointer"
+              >
+                <span data-focus-id="${card.id}" contenteditable="true" spellcheck="false" ondblclick="event.stopPropagation()" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-[#34D399] rounded px-1">${escapeHtml(card.title)}</span>
+                <span class="text-[10px] text-neutral-500 mt-1 select-none">Click "+ File" to extract image palette</span>
+              </div>`;
+
+          const swatches = (card.colors || []).map(hex => `
+            <button
+              type="button"
+              onclick="copyMoodSwatch('${escapeHtml(hex)}', this)"
+              title="${escapeHtml(hex)} (click to copy)"
+              class="group/sw flex-1 flex flex-col items-center gap-1 min-w-0"
+            >
+              <span class="h-6 w-full rounded-md border border-white/15 group-hover/sw:border-white transition" style="background-color: ${escapeHtml(hex)}"></span>
+              <span class="text-[9px] font-mono text-neutral-400 group-hover/sw:text-[#34D399] truncate max-w-full">${escapeHtml(hex)}</span>
+            </button>
+          `).join('');
+
+          html += `
+            <article
+              data-kind="card"
+              data-id="${card.id}"
+              style="left: ${card.x}px; top: ${card.y}px; ${getItemSizeStyle(card)}"
+              class="canvas-item group absolute w-72 bg-[#171717] border border-[#262626] hover:border-[#10B981]/60 rounded-2xl p-4 shadow-2xl transition-colors space-y-2.5"
+            >
+              ${renderResizeHandles()}
+              <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none">
+                <span class="text-xs font-bold uppercase tracking-wider text-[#34D399] whitespace-nowrap shrink-0">Mood Card</span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button onclick="triggerCardUpload('${card.id}')" title="Upload image to extract palette" class="px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
+                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                </div>
+              </div>
+
+              ${moodFrame}
+              ${card.attachmentData && !hasMoodImage ? renderAttachmentBlock(card) : ''}
+              ${swatches ? `<div class="flex gap-1.5 pt-0.5">${swatches}</div>` : ''}
+              <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Add lighting or styling notes..." class="text-xs text-neutral-400 leading-relaxed outline-none focus:text-neutral-200 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
+            </article>
+          `;
+        } else if (card.type === 'doc') {
+          html += `
+            <article
+              data-kind="card"
+              data-id="${card.id}"
+              style="left: ${card.x}px; top: ${card.y}px; ${getItemSizeStyle(card)}"
+              class="canvas-item group absolute w-72 bg-[#171717] border-l-2 border-sky-400 border-y border-r border-[#262626] rounded-2xl p-4 shadow-2xl space-y-2.5"
+            >
+              ${renderResizeHandles()}
+              <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between select-none">
+                <span class="text-xs font-bold uppercase tracking-wider text-sky-300 whitespace-nowrap">Document</span>
+                <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition">&times;</button>
+              </div>
+              <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-sky-300 rounded px-1 -mx-1 truncate">${escapeHtml(card.title)}</h3>
+              ${renderAttachmentBlock(card)}
+              <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Add document notes..." class="text-xs text-neutral-400 leading-relaxed outline-none focus:text-neutral-200 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
+            </article>
+          `;
+        } else if (card.type === 'todo') {
+          const rows = (card.items || []).map(item => `
+            <div class="flex items-center gap-2 text-xs bg-[#0A0A0A] border border-[#262626] rounded-lg px-2.5 py-1.5">
+              <input
+                type="checkbox"
+                ${item.done ? 'checked' : ''}
+                onchange="toggleTodoItem('${card.id}', '${item.id}')"
+                class="accent-[#10B981] cursor-pointer rounded"
+              />
+              <span
+                contenteditable="true"
+                spellcheck="false"
+                onblur="updateTodoText('${card.id}', '${item.id}', this.textContent)"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
+                class="flex-1 outline-none ${item.done ? 'line-through text-neutral-500' : 'text-neutral-200'}"
+              >${escapeHtml(item.text)}</span>
+              <button onclick="removeTodoItem('${card.id}', '${item.id}')" class="text-neutral-600 hover:text-red-400 text-xs">&times;</button>
+            </div>
+          `).join('');
+
+          html += `
+            <article
+              data-kind="card"
+              data-id="${card.id}"
+              style="left: ${card.x}px; top: ${card.y}px; ${getItemSizeStyle(card)}"
+              class="canvas-item group absolute w-72 bg-[#171717] border border-[#262626] hover:border-emerald-400/60 rounded-2xl p-4 shadow-2xl space-y-2.5"
+            >
+              ${renderResizeHandles()}
+              <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none">
+                <span class="text-xs font-bold uppercase tracking-wider text-emerald-300 whitespace-nowrap shrink-0">To-Do List</span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button onclick="addTodoItem('${card.id}')" class="px-2.5 py-1 rounded text-[10px] leading-none bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 whitespace-nowrap shrink-0">+ Task</button>
+                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                </div>
+              </div>
+              <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-emerald-300 rounded px-1 -mx-1">${escapeHtml(card.title)}</h3>
+              <div class="space-y-1.5">${rows}</div>
+            </article>
+          `;
+        } else if (card.type === 'column') {
+          html += `
+            <article
+              data-kind="card"
+              data-card-type="column"
+              data-id="${card.id}"
+              style="left: ${card.x}px; top: ${card.y}px; ${getItemSizeStyle(card)}"
+              class="canvas-item column-drop-target group absolute w-72 min-h-[340px] bg-[#171717]/90 border-t-2 border-amber-400 border-x border-b border-[#262626] rounded-2xl p-4 shadow-2xl flex flex-col justify-between space-y-3 transition-shadow"
+            >
+              ${renderResizeHandles()}
+              <div class="space-y-2.5">
+                <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none pb-2 border-b border-[#262626]">
+                  <span class="text-xs font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap shrink-0">Column</span>
+                  <div class="flex items-center gap-1.5 shrink-0">
+                    <span class="text-[10px] font-mono text-neutral-500">${(card.cards || []).length}</span>
+                    <button onclick="triggerCardUpload('${card.id}')" title="Attach reference image" class="px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
+                    <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                  </div>
+                </div>
+                <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-xl text-[#E5E5E5] leading-tight outline-none focus:text-amber-400 rounded px-1 -mx-1">${escapeHtml(card.title)}</h3>
+                ${renderAttachmentBlock(card)}
+                <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Add lane notes, shot sequence, or reminders..." class="text-xs text-neutral-400 leading-relaxed outline-none focus:text-neutral-200 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
+                <div class="space-y-2 pt-1">${renderColumnNestedItems(card)}</div>
+              </div>
+              <div class="pt-2 border-t border-[#262626]/80 text-[10px] text-neutral-500 select-none">
+                Drag items here or between columns • Drag header to move
+              </div>
+            </article>
+          `;
+        } else {
+          html += `
+            <article
+              data-kind="card"
+              data-id="${card.id}"
+              style="left: ${card.x}px; top: ${card.y}px; ${getItemSizeStyle(card)}"
+              class="canvas-item group absolute w-64 bg-[#171717] border-l-2 border-[#3B82F6] border-y border-r border-[#262626] rounded-2xl p-4 shadow-2xl space-y-2"
+            >
+              ${renderResizeHandles()}
+              <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none">
+                <span class="text-xs font-bold uppercase tracking-wider text-[#60A5FA] whitespace-nowrap shrink-0">Production Note</span>
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <button onclick="triggerCardUpload('${card.id}')" title="Attach reference image" class="px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
+                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                </div>
+              </div>
+              <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-[#60A5FA] rounded px-1 -mx-1">${escapeHtml(card.title)}</h3>
+              ${renderAttachmentBlock(card)}
+              <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Write production note..." class="text-xs text-neutral-300 leading-relaxed outline-none focus:text-white rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
+            </article>
+          `;
+        }
+      });
+
+      container.innerHTML = html;
+      attachCornerResizeHandles();
+      attachDragAndAlignmentGuides();
+      attachNestedColumnDrag();
+      applyReadOnlyUI();
+    }
+
+    function getCanvasItemModel(kind, id) {
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return null;
+      if (kind === 'subboard') {
+        return (board.subBoards || []).find(s => s.id === id) || null;
+      }
+      return (board.cards || []).find(c => c.id === id) || null;
+    }
+
+    function attachCornerResizeHandles() {
+      if (isReadOnlyMode) return;
+      const container = document.getElementById('itemsContainer');
+
+      container.querySelectorAll('.resize-handle').forEach(handle => {
+        handle.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const cardEl = handle.closest('.canvas-item');
+          if (!cardEl) return;
+          const model = getCanvasItemModel(cardEl.dataset.kind, cardEl.dataset.id);
+          if (!model) return;
+          delete model.width;
+          delete model.height;
+          saveState();
+          renderStudio();
+        });
+
+        handle.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          const cardEl = handle.closest('.canvas-item');
+          if (!cardEl) return;
+
+          const kind = cardEl.dataset.kind;
+          const id = cardEl.dataset.id;
+          const model = getCanvasItemModel(kind, id);
+          if (!model) return;
+
+          const dir = handle.dataset.dir;
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const origLeft = parseFloat(cardEl.style.left) || model.x || 0;
+          const origTop = parseFloat(cardEl.style.top) || model.y || 0;
+          const origWidth = model.width || cardEl.getBoundingClientRect().width / currentZoom;
+          const origHeight = model.height || cardEl.getBoundingClientRect().height / currentZoom;
+
+          const minW = model.type === 'column' ? 256 : 210;
+          const minH = model.type === 'column' ? 220 : 120;
+
+          cardEl.classList.add('is-resizing');
+          cardEl.style.zIndex = '28';
+          cardEl.style.maxWidth = 'none';
+          cardEl.style.minHeight = '0';
+
+          function onMove(ev) {
+            const dx = (ev.clientX - startX) / currentZoom;
+            const dy = (ev.clientY - startY) / currentZoom;
+
+            let nextW = origWidth;
+            let nextH = origHeight;
+            let nextX = origLeft;
+            let nextY = origTop;
+
+            if (dir.includes('e')) {
+              nextW = Math.max(minW, origWidth + dx);
+            }
+            if (dir.includes('s')) {
+              nextH = Math.max(minH, origHeight + dy);
+            }
+            if (dir.includes('w')) {
+              const candidateW = origWidth - dx;
+              if (candidateW >= minW) {
+                nextW = candidateW;
+                nextX = Math.max(0, origLeft + dx);
+              }
+            }
+            if (dir.includes('n')) {
+              const candidateH = origHeight - dy;
+              if (candidateH >= minH) {
+                nextH = candidateH;
+                nextY = Math.max(0, origTop + dy);
+              }
+            }
+
+            const roundedX = Math.round(nextX);
+            const roundedY = Math.round(nextY);
+            const roundedW = Math.round(nextW);
+            const roundedH = Math.round(nextH);
+
+            cardEl.style.left = `${roundedX}px`;
+            cardEl.style.top = `${roundedY}px`;
+            cardEl.style.width = `${roundedW}px`;
+            cardEl.style.height = `${roundedH}px`;
+
+            model.x = roundedX;
+            model.y = roundedY;
+            model.width = roundedW;
+            model.height = roundedH;
+          }
+
+          function onUp() {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            cardEl.classList.remove('is-resizing');
+            cardEl.style.zIndex = '';
+            saveState();
+          }
+
+          window.addEventListener('pointermove', onMove);
+          window.addEventListener('pointerup', onUp);
+        });
+      });
+    }
+
+    function attachNestedColumnDrag() {
+      if (isReadOnlyMode) return;
+      const surface = document.getElementById('spatialSurface');
+      const container = document.getElementById('itemsContainer');
+
+      function toSurfaceRect(domEl) {
+        const sRect = surface.getBoundingClientRect();
+        const eRect = domEl.getBoundingClientRect();
+        const left = (eRect.left - sRect.left) / currentZoom;
+        const top = (eRect.top - sRect.top) / currentZoom;
+        const width = eRect.width / currentZoom;
+        const height = eRect.height / currentZoom;
+        return { left, top, width, height, right: left + width, bottom: top + height };
+      }
+
+      container.querySelectorAll('.nested-drag-handle').forEach(handle => {
+        handle.addEventListener('pointerdown', (e) => {
+          if (e.target.closest('button')) return;
+          e.preventDefault();
+          e.stopPropagation();
+
+          const nestedEl = handle.closest('.column-nested-item');
+          if (!nestedEl) return;
+          const sourceColumnId = nestedEl.dataset.columnId;
+          const nestedId = nestedEl.dataset.nestedId;
+
+          const startX = e.clientX;
+          const startY = e.clientY;
+          let ghost = null;
+          let hoveredColumn = null;
+
+          const columnTargets = Array.from(container.querySelectorAll('.column-drop-target')).map(colEl => ({
+            id: colEl.dataset.id,
+            el: colEl,
+            rect: toSurfaceRect(colEl)
+          }));
+
+          function setHoveredColumn(nextCol) {
+            if (hoveredColumn && hoveredColumn.id !== nextCol?.id) {
+              hoveredColumn.el.classList.remove('ring-2', 'ring-amber-400/90', 'bg-amber-400/5');
+            }
+            hoveredColumn = nextCol || null;
+            if (hoveredColumn) {
+              hoveredColumn.el.classList.add('ring-2', 'ring-amber-400/90', 'bg-amber-400/5');
+            }
+          }
+
+          function ensureGhost(clientX, clientY) {
+            if (ghost) return;
+            ghost = document.createElement('div');
+            ghost.className = 'fixed z-50 pointer-events-none w-56 bg-[#171717] border border-amber-400/80 rounded-xl px-3 py-2 text-xs text-white shadow-2xl truncate';
+            ghost.textContent = nestedEl.querySelector('p')?.textContent || 'Moved Item';
+            document.body.appendChild(ghost);
+            positionGhost(clientX, clientY);
+          }
+
+          function positionGhost(clientX, clientY) {
+            if (!ghost) return;
+            ghost.style.left = `${clientX + 10}px`;
+            ghost.style.top = `${clientY + 10}px`;
+          }
+
+          function onMove(ev) {
+            const movedDist = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+            if (movedDist < 5 && !ghost) return;
+            ensureGhost(ev.clientX, ev.clientY);
+            positionGhost(ev.clientX, ev.clientY);
+
+            const sRect = surface.getBoundingClientRect();
+            const surfX = (ev.clientX - sRect.left) / currentZoom;
+            const surfY = (ev.clientY - sRect.top) / currentZoom;
+
+            const matchedCol = columnTargets.find(col =>
+              surfX >= col.rect.left &&
+              surfX <= col.rect.right &&
+              surfY >= col.rect.top &&
+              surfY <= col.rect.bottom
+            );
+            setHoveredColumn(matchedCol || null);
+          }
+
+          function onUp(ev) {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            if (ghost) {
+              ghost.remove();
+              ghost = null;
+            }
+
+            const targetColId = hoveredColumn?.id || null;
+            setHoveredColumn(null);
+
+            if (targetColId && targetColId !== sourceColumnId) {
+              transferNestedItemBetweenColumns(sourceColumnId, nestedId, targetColId);
+            } else if (!targetColId && Math.hypot(ev.clientX - startX, ev.clientY - startY) >= 5) {
+              const sRect = surface.getBoundingClientRect();
+              const dropX = Math.max(16, Math.round((ev.clientX - sRect.left) / currentZoom - 120));
+              const dropY = Math.max(12, Math.round((ev.clientY - sRect.top) / currentZoom - 24));
+              popOutColumnItem(sourceColumnId, nestedId, { x: dropX, y: dropY });
+            }
+          }
+
+          window.addEventListener('pointermove', onMove);
+          window.addEventListener('pointerup', onUp);
+        });
+      });
+    }
+
+    function attachDragAndAlignmentGuides() {
+      if (isReadOnlyMode) return;
+      const surface = document.getElementById('spatialSurface');
+      const container = document.getElementById('itemsContainer');
+      const guideLayer = document.getElementById('guideLayer');
+      const vGuide = document.getElementById('guideVertical');
+      const hGuide = document.getElementById('guideHorizontal');
+      const hSpacing = document.getElementById('spacingHorizontal');
+      const hSpacingLabel = document.getElementById('spacingHorizontalLabel');
+      const vSpacing = document.getElementById('spacingVertical');
+      const vSpacingLabel = document.getElementById('spacingVerticalLabel');
+      const SNAP_THRESHOLD = 8;
+
+      function toSurfaceRect(domEl) {
+        const sRect = surface.getBoundingClientRect();
+        const eRect = domEl.getBoundingClientRect();
+        const left = (eRect.left - sRect.left) / currentZoom;
+        const top = (eRect.top - sRect.top) / currentZoom;
+        const width = eRect.width / currentZoom;
+        const height = eRect.height / currentZoom;
+        return {
+          left,
+          top,
+          width,
+          height,
+          right: left + width,
+          bottom: top + height,
+          centerX: left + width / 2,
+          centerY: top + height / 2
+        };
+      }
+
+      function overlapsVertically(aTop, aBottom, b) {
+        return Math.min(aBottom, b.bottom) - Math.max(aTop, b.top) > 20;
+      }
+
+      function overlapsHorizontally(aLeft, aRight, b) {
+        return Math.min(aRight, b.right) - Math.max(aLeft, b.left) > 20;
+      }
+
+      function findEqualHorizontalGap(x, top, height, width, peers) {
+        const bottom = top + height;
+        const right = x + width;
+        const rowPeers = peers.filter(p => overlapsVertically(top, bottom, p));
+        const leftNeighbor = rowPeers
+          .filter(p => p.right <= x + 4)
+          .sort((a, b) => b.right - a.right)[0];
+        const rightNeighbor = rowPeers
+          .filter(p => p.left >= right - 4)
+          .sort((a, b) => a.left - b.left)[0];
+
+        if (!leftNeighbor || !rightNeighbor) return null;
+
+        const targetGap = rightNeighbor.left - leftNeighbor.right;
+        if (targetGap < 0) return null;
+
+        const idealLeft = leftNeighbor.right + (targetGap - width) / 2;
+        const delta = Math.abs(x - idealLeft);
+        if (delta > SNAP_THRESHOLD) return null;
+
+        const gapValue = Math.round((rightNeighbor.left - leftNeighbor.right - width) / 2);
+        if (gapValue < 0) return null;
+
+        const midY = Math.round((Math.max(top, leftNeighbor.top) + Math.min(bottom, leftNeighbor.bottom)) / 2);
+        return {
+          delta,
+          snappedLeft: idealLeft,
+          gap: gapValue,
+          leftStart: leftNeighbor.right,
+          leftEnd: idealLeft,
+          rightStart: idealLeft + width,
+          rightEnd: rightNeighbor.left,
+          midY
+        };
+      }
+
+      function findEqualVerticalGap(y, left, width, height, peers) {
+        const right = left + width;
+        const bottom = y + height;
+        const colPeers = peers.filter(p => overlapsHorizontally(left, right, p));
+        const topNeighbor = colPeers
+          .filter(p => p.bottom <= y + 4)
+          .sort((a, b) => b.bottom - a.bottom)[0];
+        const bottomNeighbor = colPeers
+          .filter(p => p.top >= bottom - 4)
+          .sort((a, b) => a.top - b.top)[0];
+
+        if (!topNeighbor || !bottomNeighbor) return null;
+
+        const targetSpan = bottomNeighbor.top - topNeighbor.bottom;
+        if (targetSpan < height) return null;
+
+        const idealTop = topNeighbor.bottom + (targetSpan - height) / 2;
+        const delta = Math.abs(y - idealTop);
+        if (delta > SNAP_THRESHOLD) return null;
+
+        const gapValue = Math.round((targetSpan - height) / 2);
+        if (gapValue < 0) return null;
+
+        const midX = Math.round((Math.max(left, topNeighbor.left) + Math.min(right, topNeighbor.right)) / 2);
+        return {
+          delta,
+          snappedTop: idealTop,
+          gap: gapValue,
+          topStart: topNeighbor.bottom,
+          topEnd: idealTop,
+          bottomStart: idealTop + height,
+          bottomEnd: bottomNeighbor.top,
+          midX
+        };
+      }
+
+      container.querySelectorAll('.canvas-item').forEach(el => {
+        const handle = el.querySelector('.drag-handle');
+        if (!handle) return;
+
+        handle.addEventListener('pointerdown', (e) => {
+          if (e.target.closest('button')) return;
+          e.preventDefault();
+
+          const draggedKind = el.dataset.kind;
+          const draggedId = el.dataset.id;
+          const isColumnSelf = el.dataset.cardType === 'column';
+
+          const startX = e.clientX;
+          const startY = e.clientY;
+          const initialBox = toSurfaceRect(el);
+          const origLeft = parseFloat(el.style.left) || initialBox.left;
+          const origTop = parseFloat(el.style.top) || initialBox.top;
+          const width = initialBox.width;
+          const height = initialBox.height;
+          el.style.zIndex = '25';
+
+          const lineThickness = `${Math.max(1, 1.5 / currentZoom)}px`;
+          vGuide.style.width = lineThickness;
+          hGuide.style.height = lineThickness;
+
+          const columnTargets = !isColumnSelf
+            ? Array.from(container.querySelectorAll('.column-drop-target')).map(colEl => ({
+                id: colEl.dataset.id,
+                el: colEl,
+                rect: toSurfaceRect(colEl)
+              }))
+            : [];
+
+          let hoveredColumn = null;
+
+          function setHoveredColumn(nextCol) {
+            if (hoveredColumn && hoveredColumn.id !== nextCol?.id) {
+              hoveredColumn.el.classList.remove('ring-2', 'ring-amber-400/90', 'bg-amber-400/5');
+            }
+            hoveredColumn = nextCol || null;
+            if (hoveredColumn) {
+              hoveredColumn.el.classList.add('ring-2', 'ring-amber-400/90', 'bg-amber-400/5');
+            }
+          }
+
+          const peers = Array.from(container.querySelectorAll('.canvas-item'))
+            .filter(other => other !== el)
+            .map(other => toSurfaceRect(other));
+
+          function onMove(ev) {
+            let rawX = Math.max(0, origLeft + (ev.clientX - startX) / currentZoom);
+            let rawY = Math.max(0, origTop + (ev.clientY - startY) / currentZoom);
+            const rawRight = rawX + width;
+            const rawBottom = rawY + height;
+            const rawCenterX = rawX + width / 2;
+            const rawCenterY = rawY + height / 2;
+
+            if (columnTargets.length > 0) {
+              const matchedCol = columnTargets.find(col =>
+                rawCenterX >= col.rect.left &&
+                rawCenterX <= col.rect.right &&
+                rawCenterY >= col.rect.top &&
+                rawCenterY <= col.rect.bottom
+              );
+              setHoveredColumn(matchedCol || null);
+            }
+
+            let bestX = null;
+            for (const p of peers) {
+              const leftDelta = Math.abs(rawX - p.left);
+              if (leftDelta <= SNAP_THRESHOLD && (!bestX || leftDelta < bestX.delta)) {
+                bestX = { delta: leftDelta, snappedLeft: p.left, guideX: p.left };
+              }
+              const centerDelta = Math.abs(rawCenterX - p.centerX);
+              if (centerDelta <= SNAP_THRESHOLD && (!bestX || centerDelta < bestX.delta)) {
+                bestX = { delta: centerDelta, snappedLeft: p.centerX - width / 2, guideX: p.centerX };
+              }
+              const rightDelta = Math.abs(rawRight - p.right);
+              if (rightDelta <= SNAP_THRESHOLD && (!bestX || rightDelta < bestX.delta)) {
+                bestX = { delta: rightDelta, snappedLeft: p.right - width, guideX: p.right };
+              }
+            }
+
+            let bestY = null;
+            for (const p of peers) {
+              const topDelta = Math.abs(rawY - p.top);
+              if (topDelta <= SNAP_THRESHOLD && (!bestY || topDelta < bestY.delta)) {
+                bestY = { delta: topDelta, snappedTop: p.top, guideY: p.top };
+              }
+              const centerYDelta = Math.abs(rawCenterY - p.centerY);
+              if (centerYDelta <= SNAP_THRESHOLD && (!bestY || centerYDelta < bestY.delta)) {
+                bestY = { delta: centerYDelta, snappedTop: p.centerY - height / 2, guideY: p.centerY };
+              }
+              const bottomDelta = Math.abs(rawBottom - p.bottom);
+              if (bottomDelta <= SNAP_THRESHOLD && (!bestY || bottomDelta < bestY.delta)) {
+                bestY = { delta: bottomDelta, snappedTop: p.bottom - height, guideY: p.bottom };
+              }
+            }
+
+            const eqX = findEqualHorizontalGap(rawX, rawY, height, width, peers);
+            if (eqX && (!bestX || eqX.delta <= bestX.delta)) {
+              bestX = { delta: eqX.delta, snappedLeft: eqX.snappedLeft, guideX: null };
+            }
+
+            const eqY = findEqualVerticalGap(rawY, rawX, width, height, peers);
+            if (eqY && (!bestY || eqY.delta <= bestY.delta)) {
+              bestY = { delta: eqY.delta, snappedTop: eqY.snappedTop, guideY: null };
+            }
+
+            const finalX = bestX ? Math.max(0, Math.round(bestX.snappedLeft)) : Math.round(rawX);
+            const finalY = bestY ? Math.max(0, Math.round(bestY.snappedTop)) : Math.round(rawY);
+
+            el.style.left = `${finalX}px`;
+            el.style.top = `${finalY}px`;
+
+            const activeEqX = eqX && Math.abs(finalX - Math.round(eqX.snappedLeft)) <= 1 ? eqX : null;
+            const activeEqY = eqY && Math.abs(finalY - Math.round(eqY.snappedTop)) <= 1 ? eqY : null;
+
+            const showVGuide = Boolean(bestX && bestX.guideX !== null && !activeEqX);
+            const showHGuide = Boolean(bestY && bestY.guideY !== null && !activeEqY);
+
+            if (showVGuide || showHGuide || activeEqX || activeEqY) {
+              guideLayer.classList.remove('hidden');
+            } else {
+              guideLayer.classList.add('hidden');
+            }
+
+            if (showVGuide) {
+              vGuide.style.left = `${Math.round(bestX.guideX)}px`;
+              vGuide.classList.remove('hidden');
+            } else {
+              vGuide.classList.add('hidden');
+            }
+
+            if (showHGuide) {
+              hGuide.style.top = `${Math.round(bestY.guideY)}px`;
+              hGuide.classList.remove('hidden');
+            } else {
+              hGuide.classList.add('hidden');
+            }
+
+            if (activeEqX) {
+              const spanW = Math.max(4, Math.round(activeEqX.leftEnd - activeEqX.leftStart));
+              hSpacing.style.left = `${Math.round(activeEqX.leftStart)}px`;
+              hSpacing.style.top = `${activeEqX.midY}px`;
+              hSpacing.style.width = `${spanW}px`;
+              hSpacingLabel.textContent = `${activeEqX.gap}px`;
+              hSpacing.classList.remove('hidden');
+            } else {
+              hSpacing.classList.add('hidden');
+            }
+
+            if (activeEqY) {
+              const spanH = Math.max(4, Math.round(activeEqY.topEnd - activeEqY.topStart));
+              vSpacing.style.left = `${activeEqY.midX}px`;
+              vSpacing.style.top = `${Math.round(activeEqY.topStart)}px`;
+              vSpacing.style.height = `${spanH}px`;
+              vSpacingLabel.textContent = `${activeEqY.gap}px`;
+              vSpacing.classList.remove('hidden');
+            } else {
+              vSpacing.classList.add('hidden');
+            }
+          }
+
+          function onUp() {
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            el.style.zIndex = '';
+            vGuide.classList.add('hidden');
+            hGuide.classList.add('hidden');
+            hSpacing.classList.add('hidden');
+            vSpacing.classList.add('hidden');
+            guideLayer.classList.add('hidden');
+
+            const droppedIntoColumnId = hoveredColumn?.id || null;
+            setHoveredColumn(null);
+
+            if (droppedIntoColumnId) {
+              moveItemIntoColumn(draggedKind, draggedId, droppedIntoColumnId);
+              return;
+            }
+
+            const board = studioState.boards[studioState.activeBoardId];
+            if (!board) return;
+            const kind = el.dataset.kind;
+            const id = el.dataset.id;
+            const finalX = parseInt(el.style.left, 10);
+            const finalY = parseInt(el.style.top, 10);
+
+            if (kind === 'subboard') {
+              const ref = (board.subBoards || []).find(s => s.id === id);
+              if (ref) { ref.x = finalX; ref.y = finalY; }
+            } else {
+              const card = (board.cards || []).find(c => c.id === id);
+              if (card) { card.x = finalX; card.y = finalY; }
+            }
+            saveState();
+          }
+
+          window.addEventListener('pointermove', onMove);
+          window.addEventListener('pointerup', onUp);
+        });
+      });
+    }
+
+    function tidyCanvasLayout() {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      let col = 0;
+      let row = 0;
+      const colWidth = 420;
+      const rowHeight = 440;
+
+      (board.subBoards || []).forEach(ref => {
+        ref.x = 24 + col * colWidth;
+        ref.y = 16 + row * rowHeight;
+        col++;
+        if (col >= 3) { col = 0; row++; }
+      });
+
+      (board.cards || []).forEach(card => {
+        card.x = 24 + col * colWidth;
+        card.y = 16 + row * rowHeight;
+        col++;
+        if (col >= 3) { col = 0; row++; }
+      });
+
+      saveState();
+      renderStudio();
+    }
+
+    // Bin Functions
+    function deleteCard(cardId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      const target = board.cards.find(c => c.id === cardId);
+      if (!target) return;
+
+      board.bin = board.bin || [];
+      board.bin.unshift({
+        binId: 'bin_' + Date.now(),
+        kind: 'card',
+        deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        data: { ...target, attachmentData: '' }
+      });
+      board.cards = board.cards.filter(c => c.id !== cardId);
+      saveState();
+      renderStudio();
+    }
+
+    function deleteSubBoard(subId) {
+      if (isReadOnlyMode) return;
+      const board = studioState.boards[studioState.activeBoardId];
+      const sub = studioState.boards[subId];
+      if (!board || !sub) return;
+
+      const ref = (board.subBoards || []).find(s => s.id === subId);
+      board.bin = board.bin || [];
+      board.bin.unshift({
+        binId: 'bin_' + Date.now(),
+        kind: 'subboard',
+        deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        data: { id: subId, title: sub.title, x: ref?.x || 24, y: ref?.y || 16 }
+      });
+      board.subBoards = (board.subBoards || []).filter(s => s.id !== subId);
+      delete studioState.boards[subId];
+      saveState();
+      renderStudio();
+    }
+
+    function openBinModal() {
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      const list = document.getElementById('binItemsList');
+      const items = board.bin || [];
+
+      if (items.length === 0) {
+        list.innerHTML = `<p class="text-xs text-neutral-500 text-center py-6">The bin for this board is empty.</p>`;
+      } else {
+        list.innerHTML = items.map(entry => `
+          <div class="flex items-center justify-between gap-3 bg-[#0A0A0A] border border-[#262626] rounded-xl px-3.5 py-2.5">
+            <div class="min-w-0">
+              <span class="text-[10px] uppercase tracking-wider text-[#A855F7] font-semibold">${escapeHtml(entry.kind)} • ${escapeHtml(entry.deletedAt || '')}</span>
+              <p class="text-xs text-neutral-200 font-medium truncate">${escapeHtml(entry.data.title || 'Untitled')}</p>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button onclick="restoreFromBin('${entry.binId}')" class="text-[11px] bg-[#9333EA]/20 hover:bg-[#9333EA]/35 text-[#A855F7] px-2.5 py-1 rounded-lg transition">Restore</button>
+              <button onclick="deleteBinEntryPermanently('${entry.binId}')" class="text-[11px] text-neutral-500 hover:text-red-400 px-1.5 py-1 transition">Delete</button>
+            </div>
+          </div>
+        `).join('');
+      }
+
+      document.getElementById('binModal').classList.remove('hidden');
+    }
+
+    function restoreFromBin(binId) {
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board || !board.bin) return;
+      const idx = board.bin.findIndex(b => b.binId === binId);
+      if (idx === -1) return;
+      const [entry] = board.bin.splice(idx, 1);
+
+      if (entry.kind === 'subboard') {
+        const restoredId = 'board_' + Date.now();
+        studioState.boards[restoredId] = {
+          id: restoredId,
+          parentId: board.id,
+          title: entry.data.title || 'Restored Sub-Board',
+          description: '',
+          subBoards: [],
+          bin: [],
+          cards: []
+        };
+        board.subBoards.push({
+          id: restoredId,
+          x: entry.data.x || 24,
+          y: entry.data.y || 16,
+          width: entry.data.width,
+          height: entry.data.height
+        });
+      } else {
+        board.cards.push({
+          ...entry.data,
+          id: 'card_' + Date.now(),
+          x: entry.data.x || 24,
+          y: entry.data.y || 16
+        });
+      }
+
+      saveState();
+      renderStudio();
+      openBinModal();
+    }
+
+    function deleteBinEntryPermanently(binId) {
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board || !board.bin) return;
+      board.bin = board.bin.filter(b => b.binId !== binId);
+      saveState();
+      renderStudio();
+      openBinModal();
+    }
+
+    function emptyBoardBin() {
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      board.bin = [];
+      saveState();
+      renderStudio();
+      openBinModal();
+    }
+
+    // Share Read-Only Link & Agile Single-Page PDF Export
+    function openShareModal() {
+      const board = studioState.boards[studioState.activeBoardId];
+      if (!board) return;
+      const safeBoard = { ...board, bin: [] };
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify({ board: safeBoard }))));
+      const baseUrl = `${window.location.origin}${window.location.pathname}`;
+      const shareUrl = `${baseUrl}#preview=${encodeURIComponent(encoded)}`;
+
+      document.getElementById('shareLinkInput').value = shareUrl;
+      document.getElementById('shareCopyStatus').textContent = '';
+      document.getElementById('shareModal').classList.remove('hidden');
+    }
+
+    function copyShareLink() {
+      const input = document.getElementById('shareLinkInput');
+      input.select();
+      navigator.clipboard?.writeText(input.value);
+      document.getElementById('shareCopyStatus').textContent = 'Read-only link copied to clipboard.';
+    }
+
+    function slugifyFilename(name) {
+      return (name || 'boardie-canvas')
+        .toLowerCase()
+        .replace(/\.pdf$/i, '')
+        .replace(/[^a-z0-9-_]+/g, '-')
+        .replace(/^-|-$/g, '') || 'boardie-canvas';
+    }
+
+    function updateExportButtonLabel() {
+      const destMode = document.getElementById('pdfSaveDestination').value;
+      const btn = document.getElementById('confirmExportPdfBtn');
+      btn.textContent = destMode === 'picker' ? 'Choose Folder & Export' : 'Download PDF';
+    }
+
+    function exportBoardPdf() {
+      const board = studioState.boards[studioState.activeBoardId];
+      const itemCount = document.querySelectorAll('#itemsContainer .canvas-item').length;
+      const defaultSlug = slugifyFilename(board?.title || 'boardie-canvas');
+      const destSelect = document.getElementById('pdfSaveDestination');
+
+      document.getElementById('pdfBoardName').textContent = board?.title || 'Untitled Board';
+      document.getElementById('pdfItemsSummary').textContent = `${itemCount} canvas item${itemCount === 1 ? '' : 's'}`;
+      document.getElementById('pdfFileNameInput').value = defaultSlug;
+      document.getElementById('exportPdfStatus').textContent = '';
+
+      if (typeof window.showSaveFilePicker !== 'function') {
+        destSelect.value = 'downloads';
+      }
+
+      updateExportButtonLabel();
+      document.getElementById('exportPdfModal').classList.remove('hidden');
+    }
+
+    async function savePdfToChosenDestination(pdf, filename, destinationMode) {
+      if (destinationMode === 'picker' && typeof window.showSaveFilePicker === 'function') {
+        const pdfBlob = pdf.output('blob');
+        const handle = await window.showSaveFilePicker({
+          suggestedName: filename,
+          types: [
+            {
+              description: 'PDF Document',
+              accept: { 'application/pdf': ['.pdf'] }
+            }
+          ]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(pdfBlob);
+        await writable.close();
+        return `Saved "${handle.name || filename}" to your chosen folder (not shown in Chrome's Downloads bar).`;
+      }
+
+      pdf.save(filename);
+      return destinationMode === 'picker'
+        ? `Folder picker unavailable here — downloaded "${filename}" via Chrome Downloads.`
+        : `Downloaded "${filename}" — check Chrome's Downloads widget.`;
+    }
+
+    async function generateAgileSinglePagePdf() {
+      const statusEl = document.getElementById('exportPdfStatus');
+      const btn = document.getElementById('confirmExportPdfBtn');
+      const surface = document.getElementById('spatialSurface');
+      const itemsContainer = document.getElementById('itemsContainer');
+      const guideLayer = document.getElementById('guideLayer');
+      const board = studioState.boards[studioState.activeBoardId];
+
+      if (!window.html2canvas || !window.jspdf?.jsPDF) {
+        statusEl.textContent = 'PDF libraries could not load. Check your connection and try again.';
+        return;
+      }
+
+      const framingMode = document.getElementById('pdfFramingMode').value;
+      const themeMode = document.getElementById('pdfThemeMode').value;
+      const pad = Math.max(48, Number(document.getElementById('pdfMarginInput').value) || 96);
+      const destinationMode = document.getElementById('pdfSaveDestination').value;
+      const rawName = document.getElementById('pdfFileNameInput').value.trim();
+      const finalFileName = `${slugifyFilename(rawName || board?.title || 'boardie-canvas')}.pdf`;
+
+      const prevZoomPercent = Math.round(currentZoom * 100);
+      const prevTransform = surface.style.transform;
+      const prevBg = surface.style.backgroundColor;
+
+      btn.disabled = true;
+      btn.textContent = 'Rendering...';
+      statusEl.textContent = 'Preparing single-page canvas layout...';
+      guideLayer.classList.add('hidden');
+      document.body.classList.add('pdf-capturing');
+
+      try {
+        surface.style.transform = 'scale(1)';
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+        const surfaceRect = surface.getBoundingClientRect();
+        const itemEls = Array.from(itemsContainer.querySelectorAll('.canvas-item'));
+
+        let cropX = 0;
+        let cropY = 0;
+        let cropW = Math.max(800, surface.scrollWidth);
+        let cropH = Math.max(600, surface.scrollHeight);
+
+        if (framingMode === 'tight' && itemEls.length > 0) {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          itemEls.forEach(el => {
+            const r = el.getBoundingClientRect();
+            const left = r.left - surfaceRect.left;
+            const top = r.top - surfaceRect.top;
+            minX = Math.min(minX, left);
+            minY = Math.min(minY, top);
+            maxX = Math.max(maxX, left + r.width);
+            maxY = Math.max(maxY, top + r.height);
+          });
+          cropX = Math.max(0, Math.floor(minX - pad));
+          cropY = Math.max(0, Math.floor(minY - pad));
+          cropW = Math.max(360, Math.ceil(maxX - minX + pad * 2));
+          cropH = Math.max(260, Math.ceil(maxY - minY + pad * 2));
+        }
+
+        if (themeMode === 'light') {
+          surface.style.backgroundColor = '#ffffff';
+        }
+
+        const canvas = await window.html2canvas(surface, {
+          backgroundColor: themeMode === 'light' ? '#ffffff' : '#0A0A0A',
+          scale: 2,
+          useCORS: true,
+          x: cropX,
+          y: cropY,
+          width: cropW,
+          height: cropH,
+          ignoreElements: (el) => el.classList?.contains('resize-handle')
+        });
+
+        const pxToPt = (px) => (px * 72) / 96;
+        const pageWidthPt = Math.max(360, pxToPt(cropW));
+        const pageHeightPt = Math.max(240, pxToPt(cropH));
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({
+          orientation: pageWidthPt >= pageHeightPt ? 'landscape' : 'portrait',
+          unit: 'pt',
+          format: [pageWidthPt, pageHeightPt]
+        });
+
+        const imgData = canvas.toDataURL('image/png', 1.0);
+        pdf.addImage(imgData, 'PNG', 0, 0, pageWidthPt, pageHeightPt);
+
+        const savedMessage = await savePdfToChosenDestination(pdf, finalFileName, destinationMode);
+        statusEl.textContent = savedMessage;
+        setTimeout(() => closeModal('exportPdfModal'), 1200);
+      } catch (err) {
+        if (err?.name === 'AbortError') {
+          statusEl.textContent = 'Save cancelled — no file was written.';
+        } else {
+          console.error('PDF export error:', err);
+          statusEl.textContent = 'Could not generate PDF. Try Chrome Downloads or fewer large images.';
+        }
+      } finally {
+        document.body.classList.remove('pdf-capturing');
+        surface.style.transform = prevTransform;
+        surface.style.backgroundColor = prevBg;
+        setCanvasZoom(prevZoomPercent);
+        btn.disabled = false;
+        updateExportButtonLabel();
+      }
+    }
+
+    // Account, Billing & Plan Modal
+    function openAccountModal() {
+      const user = getUserProfile();
+      const planKey = PLAN_INFO[user.plan] ? user.plan : 'free';
+      document.getElementById('currentPlanTitle').textContent = PLAN_INFO[planKey].title;
+      document.getElementById('currentPlanDetail').textContent = PLAN_INFO[planKey].detail;
+      document.getElementById('accNameInput').value = user.name;
+      document.getElementById('accEmailInput').value = user.email;
+      document.getElementById('billingMethodInput').value = user.billingMethod;
+      document.getElementById('billingCycleInput').value = user.billingCycle;
+      document.getElementById('billingAddressInput').value = user.billingAddress;
+      document.getElementById('accountSaveNotice').textContent = '';
+      document.getElementById('accountModal').classList.remove('hidden');
+    }
+
+    function saveAccountSettings(event) {
+      event.preventDefault();
+      const current = getUserProfile();
+      const updated = {
+        ...current,
+        name: document.getElementById('accNameInput').value.trim() || 'Creator',
+        email: document.getElementById('accEmailInput').value.trim() || current.email,
+        billingMethod: document.getElementById('billingMethodInput').value,
+        billingCycle: document.getElementById('billingCycleInput').value,
+        billingAddress: document.getElementById('billingAddressInput').value.trim()
+      };
+      saveUserProfile(updated);
+      document.getElementById('accountSaveNotice').textContent = 'Account & billing details saved.';
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.add('hidden');
+    }
+
+    function escapeHtml(str) {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeProjectsPopover();
+        closeDeleteConfirmModal();
+        closeModal('binModal');
+        closeModal('shareModal');
+        closeModal('exportPdfModal');
+        closeModal('accountModal');
+      }
+    });
+
+    initUser();
+    renderStudio();
+  </script>
+
+</body>
+</html>
