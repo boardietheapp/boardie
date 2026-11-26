@@ -6,9 +6,14 @@
   <title>Studio — boardie</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <style>
+    .canvas-item:not([data-locked="true"]) { cursor: grab; }
+    .canvas-item:not([data-locked="true"]):active { cursor: grabbing; }
+    .canvas-item[data-locked="true"] { cursor: default; }
+    .canvas-item [contenteditable="true"] { cursor: text; }
     .resize-handle {
       position: absolute;
       width: 10px;
@@ -32,6 +37,58 @@
     .resize-handle[data-dir="ne"] { top: -5px; right: -5px; cursor: nesw-resize; }
     .resize-handle[data-dir="sw"] { bottom: -5px; left: -5px; cursor: nesw-resize; }
     .resize-handle[data-dir="se"] { bottom: -5px; right: -5px; cursor: nwse-resize; }
+    .canvas-item.is-selected,
+    .column-nested-item.is-selected {
+      outline: 2px solid rgba(168, 85, 247, 0.85);
+      outline-offset: 3px;
+    }
+    .canvas-item[data-locked="true"]::before,
+    .column-nested-item[data-locked="true"]::before {
+      content: "LOCKED";
+      position: absolute;
+      top: -8px;
+      right: 12px;
+      z-index: 21;
+      padding: 2px 6px;
+      border: 1px solid rgba(251, 191, 36, 0.5);
+      border-radius: 9999px;
+      background: #171717;
+      color: #FCD34D;
+      font: 700 8px/1.2 ui-sans-serif, system-ui, sans-serif;
+      letter-spacing: 0.12em;
+      pointer-events: none;
+    }
+    .canvas-item[data-locked="true"] .drag-handle,
+    .column-nested-item[data-locked="true"] .nested-drag-handle {
+      cursor: not-allowed;
+    }
+    #canvasContextMenu {
+      position: fixed;
+      z-index: 80;
+      width: 220px;
+      max-height: min(80vh, 560px);
+      overflow-y: auto;
+    }
+    @keyframes upload-progress-indeterminate {
+      from { transform: translateX(-120%); }
+      to { transform: translateX(320%); }
+    }
+    .upload-progress-indeterminate {
+      width: 35%;
+      animation: upload-progress-indeterminate 1.2s ease-in-out infinite;
+    }
+    #uploadProgressPanel {
+      position: fixed;
+      top: 4.5rem;
+      right: 1rem;
+      z-index: 40;
+      width: min(24rem, calc(100vw - 2rem));
+      max-height: 8rem;
+      pointer-events: none;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .upload-progress-indeterminate { animation: none; }
+    }
 
     /* Prevents html2canvas from clipping descenders on metadata text without squeezing action buttons */
     .pdf-capturing .canvas-item .shot-meta-value.truncate {
@@ -49,8 +106,33 @@
       overflow: visible !important;
       box-sizing: border-box !important;
     }
+    .pdf-export-clean .canvas-item.is-selected,
+    .pdf-export-clean .column-nested-item.is-selected {
+      outline: none !important;
+    }
+    .pdf-export-clean .canvas-item[data-locked="true"]::before,
+    .pdf-export-clean .column-nested-item[data-locked="true"]::before {
+      content: none !important;
+    }
     .pdf-capturing .canvas-item svg {
       display: block !important;
+    }
+
+    /* Clean PDF capture across all card types */
+    .pdf-export-clean .pdf-hide-control,
+    .pdf-export-clean .pdf-hide-file-btn,
+    .pdf-export-clean .pdf-editor-hint,
+    .pdf-export-clean .shot-ratio-btn {
+      display: none !important;
+    }
+    .pdf-export-clean .shot-ratio-plain {
+      display: inline-block !important;
+    }
+    .pdf-export-clean [data-placeholder]:empty::before {
+      content: none !important;
+    }
+    .shot-ratio-plain {
+      display: none;
     }
 
     @media print {
@@ -163,7 +245,7 @@
       <!-- Export PDF -->
       <button
         onclick="exportBoardPdf()"
-        title="Export current board as a single-page PDF"
+        title="Preview and export current board as a single-page PDF"
         class="no-print hidden sm:inline-flex text-xs bg-[#171717] hover:bg-[#222222] border border-[#262626] text-neutral-200 px-2.5 py-1.5 rounded-lg transition whitespace-nowrap shrink-0"
       >
         Export PDF
@@ -186,7 +268,7 @@
         title="Account settings, billing, and plan"
         class="flex items-center gap-2 bg-[#171717] hover:border-[#9333EA] border border-[#262626] rounded-lg px-2.5 py-1 text-xs transition whitespace-nowrap shrink-0"
       >
-        <span class="w-1.5 h-1.5 rounded-full bg-[#34D399]"></span>
+        <span id="authStatusDot" class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
         <span id="userNameDisplay" class="text-neutral-200 font-medium">Creator</span>
       </button>
 
@@ -195,6 +277,8 @@
       </button>
     </div>
   </header>
+
+  <div id="uploadProgressPanel" class="hidden space-y-1.5 overflow-y-auto" aria-live="polite"></div>
 
   <!-- Main Workspace -->
   <div class="flex-1 flex overflow-hidden relative">
@@ -247,7 +331,7 @@
           <span class="text-[10px] font-medium pointer-events-none">Mood</span>
         </button>
 
-        <!-- Standalone Image Tool (Unboxed • Drag into Mood Cards or Shot Cards) -->
+        <!-- Standalone Image Tool -->
         <button
           draggable="true"
           ondragstart="handleToolDragStart(event, 'image')"
@@ -366,7 +450,7 @@
       </div>
 
       <div class="w-full px-1.5 pt-2">
-        <button onclick="tidyCanvasLayout()" title="Tidy Cards into Clean Grid" class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-neutral-500 hover:text-neutral-200 hover:bg-[#0A0A0A] transition">
+        <button onclick="tidyCanvasLayout()" title="Tidy Cards into 24px Grid" class="w-full py-1.5 rounded-xl flex flex-col items-center gap-0.5 text-neutral-500 hover:text-neutral-200 hover:bg-[#0A0A0A] transition">
           <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <line x1="21" y1="10" x2="3" y2="10"></line>
             <line x1="21" y1="6" x2="3" y2="6"></line>
@@ -395,7 +479,6 @@
       onclick="event.stopPropagation()"
       class="hidden fixed z-50 w-[276px] bg-[#242424] border border-[#3A3A3A] rounded-2xl p-3.5 shadow-[0_20px_50px_rgba(0,0,0,0.85)] space-y-3 select-none"
     >
-      <!-- SV Saturation / Brightness Canvas -->
       <div
         id="cpSvBox"
         class="relative w-full h-44 rounded-lg overflow-hidden cursor-crosshair border border-white/10"
@@ -410,7 +493,6 @@
         ></div>
       </div>
 
-      <!-- Eyedropper + Active Circle + Rainbow Hue Slider -->
       <div class="flex items-center gap-2.5 pt-0.5">
         <button
           type="button"
@@ -444,10 +526,8 @@
         </div>
       </div>
 
-      <!-- Dynamic Color Space Inputs (RGB / HSL / HEX) -->
       <div id="cpChannelInputs" class="grid grid-cols-3 gap-2"></div>
 
-      <!-- Bottom Mode Label + Scroll/Cycle Arrows -->
       <div class="flex items-center justify-between pt-0.5 text-xs text-neutral-300">
         <button
           type="button"
@@ -510,7 +590,7 @@
         </div>
       </div>
 
-      <!-- Zoomable Spatial Surface + Edge Snap & Equal-Spacing Guides -->
+      <!-- Zoomable Spatial Surface + 24px Grid + Edge Snap & Equal-Spacing Guides -->
       <div
         id="spatialSurface"
         style="transform: scale(1); transform-origin: top left;"
@@ -626,19 +706,19 @@
     </div>
   </div>
 
-  <!-- Themed Agile Single-Page Export PDF Modal -->
+  <!-- Themed Agile Single-Page Export PDF Modal with Preview -->
   <div id="exportPdfModal" class="hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="w-full max-w-lg bg-[#171717] border border-[#262626] rounded-2xl p-6 shadow-2xl space-y-4">
+    <div class="w-full max-w-4xl bg-[#171717] border border-[#262626] rounded-2xl p-6 shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto">
       <div class="flex items-start justify-between gap-3 border-b border-[#262626] pb-3">
         <div>
           <span class="text-[10px] font-bold uppercase tracking-wider text-[#A855F7]">Single-Page Canvas Export</span>
           <h2 class="font-heading text-2xl text-[#E5E5E5] mt-0.5">EXPORT BOARD PDF</h2>
-          <p class="text-xs text-neutral-400">Fits your entire canvas onto one agile page and lets you pick the save destination.</p>
+          <p class="text-xs text-neutral-400">Preview your clean single-page sheet (without controls, drop hints, or placeholders) before downloading.</p>
         </div>
         <button onclick="closeModal('exportPdfModal')" class="text-neutral-400 hover:text-white text-xl leading-none px-2">&times;</button>
       </div>
 
-      <!-- File Name & Save Destination -->
+      <!-- File Name -->
       <div class="space-y-1">
         <label for="pdfFileNameInput" class="block text-xs text-neutral-300">PDF File Name</label>
         <div class="flex items-center bg-[#0A0A0A] border border-[#262626] focus-within:border-[#9333EA] rounded-xl px-3 py-2">
@@ -655,14 +735,14 @@
       <div class="grid sm:grid-cols-2 gap-3">
         <div class="space-y-1">
           <label for="pdfFramingMode" class="block text-xs text-neutral-300">Canvas Framing</label>
-          <select id="pdfFramingMode" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
+          <select id="pdfFramingMode" onchange="invalidatePdfPreview()" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
             <option value="tight">Tight Around All Items (1 Page)</option>
             <option value="full">Full Spatial Canvas Area (1 Page)</option>
           </select>
         </div>
         <div class="space-y-1">
           <label for="pdfThemeMode" class="block text-xs text-neutral-300">Canvas Surface</label>
-          <select id="pdfThemeMode" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
+          <select id="pdfThemeMode" onchange="invalidatePdfPreview()" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
             <option value="dark">Studio Dark (#0A0A0A)</option>
             <option value="light">Clean Light (#FFFFFF)</option>
           </select>
@@ -672,10 +752,10 @@
       <div class="grid sm:grid-cols-2 gap-3">
         <div class="space-y-1">
           <label for="pdfMarginInput" class="block text-xs text-neutral-300">Outer Margin / Breathing Room</label>
-          <select id="pdfMarginInput" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
-            <option value="64">Standard (64px)</option>
+          <select id="pdfMarginInput" onchange="invalidatePdfPreview()" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-xs text-[#E5E5E5]">
+            <option value="48">Standard (48px)</option>
             <option value="96" selected>Spacious (96px)</option>
-            <option value="140">Generous Presentation (140px)</option>
+            <option value="144">Generous Presentation (144px)</option>
           </select>
         </div>
         <div class="space-y-1">
@@ -687,9 +767,47 @@
         </div>
       </div>
 
-      <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-3 flex items-center justify-between text-xs">
-        <span class="text-neutral-400">Board: <strong id="pdfBoardName" class="text-neutral-200 font-medium">—</strong></span>
-        <span id="pdfItemsSummary" class="font-mono text-[11px] text-[#34D399]">0 items</span>
+      <!-- PDF Preview Stage -->
+      <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-3 space-y-2.5">
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <span class="text-neutral-400">Board: <strong id="pdfBoardName" class="text-neutral-200 font-medium">—</strong></span>
+          <div class="flex items-center gap-2.5">
+            <span id="pdfItemsSummary" class="font-mono text-[11px] text-[#34D399]">0 items</span>
+            <select
+              id="pdfPreviewScaleSelect"
+              onchange="applyPdfPreviewScale()"
+              aria-label="Preview Scale"
+              class="bg-[#171717] border border-[#262626] rounded-lg px-2 py-1 text-[11px] text-neutral-200 focus:outline-none focus:border-[#9333EA]"
+            >
+              <option value="fit" selected>Fit Stage</option>
+              <option value="100">100% Actual</option>
+              <option value="125">125% Zoom</option>
+            </select>
+            <button
+              id="previewPdfBtn"
+              type="button"
+              onclick="renderPdfPreview()"
+              class="text-[11px] font-semibold bg-[#262626] hover:bg-[#333333] text-white px-3 py-1 rounded-lg transition"
+            >
+              Preview PDF
+            </button>
+          </div>
+        </div>
+
+        <div id="pdfPreviewStage" class="rounded-lg border border-dashed border-[#262626] bg-[#111111] min-h-[260px] max-h-[55vh] overflow-auto p-4">
+          <div id="pdfPreviewPlaceholder" class="min-h-[220px] flex items-center justify-center">
+            <p class="text-xs text-neutral-500 text-center">
+              Click <strong class="text-neutral-300">Preview PDF</strong> to inspect the single-page layout before downloading.
+            </p>
+          </div>
+          <div id="pdfPreviewWrapper" class="hidden w-full">
+            <img
+              id="pdfPreviewImage"
+              alt="PDF layout preview"
+              class="w-full h-auto rounded border border-[#262626] shadow-lg block"
+            />
+          </div>
+        </div>
       </div>
 
       <p id="exportPdfStatus" class="text-xs text-[#A855F7] min-h-[1rem]"></p>
@@ -716,7 +834,6 @@
         <button onclick="closeModal('accountModal')" class="text-neutral-400 hover:text-white text-xl leading-none px-2">&times;</button>
       </div>
 
-      <!-- Active Plan Card -->
       <div class="bg-[#0A0A0A] border border-[#262626] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <span class="text-[10px] font-bold uppercase tracking-wider text-[#A855F7]">Current Plan</span>
@@ -728,7 +845,6 @@
         </a>
       </div>
 
-      <!-- Account Details Form -->
       <form onsubmit="saveAccountSettings(event)" class="space-y-4">
         <div class="grid sm:grid-cols-2 gap-3">
           <div class="space-y-1">
@@ -738,15 +854,18 @@
           <div class="space-y-1">
             <label for="accEmailInput" class="block text-xs text-neutral-300">Email Address</label>
             <input id="accEmailInput" type="email" required class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-sm text-[#E5E5E5]" />
+            <p class="text-[11px] text-neutral-500">Signed-in email is managed by Supabase.</p>
           </div>
         </div>
 
         <div class="border-t border-[#262626] pt-4 space-y-3">
           <span class="text-xs font-bold uppercase tracking-wider text-[#34D399]">Billing & Payment Details</span>
+          <p class="text-[11px] text-neutral-500">Billing preferences are saved only in this browser. Payment processing is not connected yet.</p>
           <div class="grid sm:grid-cols-2 gap-3">
             <div class="space-y-1">
               <label for="billingMethodInput" class="block text-xs text-neutral-300">Payment Method</label>
               <select id="billingMethodInput" class="w-full bg-[#0A0A0A] border border-[#262626] focus:border-[#9333EA] focus:outline-none rounded-xl px-3.5 py-2 text-sm text-[#E5E5E5]">
+                <option value="Not connected">Not connected</option>
                 <option value="Card •••• 4242">Card •••• 4242</option>
                 <option value="M-Pesa / Mobile Money">M-Pesa / Mobile Money</option>
                 <option value="Bank Transfer / Invoice">Bank Transfer / Invoice</option>
@@ -777,9 +896,18 @@
     </div>
   </div>
 
+  <div id="canvasContextMenu" class="no-print hidden bg-[#171717] border border-[#3A3A3A] rounded-xl p-1.5 shadow-2xl" role="menu" aria-label="Canvas actions"></div>
+
   <script>
+    const SUPABASE_URL = 'https://btokprmspwebfddztnho.supabase.co';
+    const SUPABASE_ANON_KEY = 'sb_publishable_p53asdfUCod7Iu6wkh0dVA_Z1yrdhOp';
+    const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const ATTACHMENTS_BUCKET = 'board-attachments';
+
     const STORAGE_KEY = 'boardie_spatial_v5';
     const USER_KEY = 'boardie_user';
+    const GRID_SIZE = 24;
+    const GRID_SNAP_THRESHOLD = 10;
     const RATIOS = ['16:9', '2.39:1', '3:2', '4:3', '1:1', '4:5', '9:16'];
     const COLOR_MODES = ['RGB', 'HSL', 'HEX'];
 
@@ -789,13 +917,17 @@
     let pendingDeleteBoardId = null;
     let currentZoom = 1;
     let isReadOnlyMode = false;
+    let cachedPdfRender = null;
+    let currentAuthUser = null;
+    let supabaseSyncTimer = null;
+    const pendingAttachmentDeletes = new Set();
 
     // Color picker state
     let activeSwatchCardId = null;
     let cpModeIndex = 0; // 0: RGB, 1: HSL, 2: HEX
-    let cpHue = 152; // 0..360
-    let cpSat = 78;  // 0..100 (HSV)
-    let cpVal = 54;  // 0..100 (HSV)
+    let cpHue = 152;
+    let cpSat = 78;
+    let cpVal = 54;
 
     const PLAN_INFO = {
       free: {
@@ -812,9 +944,210 @@
       }
     };
 
+    function isUuid(val) {
+      return typeof val === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val);
+    }
+
+    function snapToGrid(value) {
+      return Math.max(0, Math.round(value / GRID_SIZE) * GRID_SIZE);
+    }
+
     function setStudioNotice(message = '') {
       const banner = document.getElementById('studioNoticeBanner');
       if (banner) banner.textContent = message;
+    }
+
+    let uploadTaskId = 0;
+    const uploadTasks = new Map();
+
+    function renderUploadProgress() {
+      const panel = document.getElementById('uploadProgressPanel');
+      if (!panel) return;
+      panel.replaceChildren();
+      panel.classList.toggle('hidden', uploadTasks.size === 0);
+
+      for (const task of uploadTasks.values()) {
+        const row = document.createElement('div');
+        row.className = 'rounded-lg border border-[#262626] bg-[#0A0A0A]/90 px-2.5 py-2';
+
+        const heading = document.createElement('div');
+        heading.className = 'flex items-center justify-between gap-3 text-[10px]';
+
+        const fileName = document.createElement('span');
+        fileName.className = 'min-w-0 truncate text-neutral-200';
+        fileName.textContent = task.fileName;
+
+        const status = document.createElement('span');
+        status.className = task.failed ? 'shrink-0 text-red-400' : 'shrink-0 text-neutral-400';
+        status.textContent = task.progress === null && !task.finished
+          ? task.status
+          : `${task.status}${task.progress !== null && !task.finished ? ` ${Math.round(task.progress)}%` : ''}`;
+
+        heading.append(fileName, status);
+
+        const track = document.createElement('div');
+        track.className = 'mt-1.5 h-1 overflow-hidden rounded-full bg-[#262626]';
+        track.setAttribute('role', 'progressbar');
+        track.setAttribute('aria-label', `Upload progress for ${task.fileName}`);
+        track.setAttribute('aria-valuemin', '0');
+        track.setAttribute('aria-valuemax', '100');
+        track.setAttribute('aria-valuetext', task.status);
+        if (task.progress !== null) track.setAttribute('aria-valuenow', String(Math.round(task.progress)));
+
+        const bar = document.createElement('div');
+        bar.className = task.failed
+          ? 'h-full bg-red-400 transition-[width] duration-200'
+          : task.finished
+            ? 'h-full bg-[#34D399] transition-[width] duration-200'
+            : 'h-full bg-[#A855F7] transition-[width] duration-200';
+        if (task.progress === null && !task.finished && !task.failed) {
+          bar.classList.add('upload-progress-indeterminate');
+        } else {
+          bar.style.width = `${task.progress ?? 0}%`;
+        }
+        track.append(bar);
+        row.append(heading, track);
+        panel.append(row);
+      }
+    }
+
+    function startUploadProgress(file) {
+      const id = ++uploadTaskId;
+      uploadTasks.set(id, {
+        fileName: file.name,
+        status: 'Reading file',
+        progress: 0,
+        finished: false,
+        failed: false
+      });
+      renderUploadProgress();
+      return id;
+    }
+
+    function updateUploadProgress(id, status, progress = null) {
+      const task = uploadTasks.get(id);
+      if (!task || task.finished) return;
+      task.status = status;
+      task.progress = progress === null ? null : Math.max(0, Math.min(100, progress));
+      renderUploadProgress();
+    }
+
+    function finishUploadProgress(id, success, message) {
+      const task = uploadTasks.get(id);
+      if (!task) return;
+      task.status = message;
+      task.progress = success ? 100 : (task.progress || 0);
+      task.finished = true;
+      task.failed = !success;
+      renderUploadProgress();
+      window.setTimeout(() => {
+        uploadTasks.delete(id);
+        renderUploadProgress();
+      }, success ? 1400 : 5000);
+    }
+
+    async function saveAttachment(fileName, dataUrl, boardId, contentType = '', onStatus = () => {}) {
+      if (!currentAuthUser) {
+        onStatus('Saving locally');
+        return {
+          attachmentData: dataUrl,
+          attachmentPath: '',
+          attachmentType: contentType
+        };
+      }
+
+      const response = await fetch(dataUrl);
+      if (!response.ok) throw new Error('Could not prepare the attachment for upload.');
+      const blob = await response.blob();
+      const actualContentType = blob.type || contentType || 'application/octet-stream';
+      const safeFileName = (fileName || 'attachment').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-100);
+      const path = `${currentAuthUser.id}/${boardId}/${crypto.randomUUID()}-${safeFileName}`;
+      onStatus('Uploading file');
+      const { error } = await sb.storage
+        .from(ATTACHMENTS_BUCKET)
+        .upload(path, blob, { contentType: actualContentType, upsert: false });
+
+      if (error) throw error;
+
+      onStatus('Adding to board');
+      const { data } = sb.storage.from(ATTACHMENTS_BUCKET).getPublicUrl(path);
+      return {
+        attachmentData: data.publicUrl,
+        attachmentPath: path,
+        attachmentType: actualContentType
+      };
+    }
+
+    async function migrateLegacyAttachments(board) {
+      let changed = false;
+      let failed = false;
+
+      async function visit(value) {
+        if (!value || typeof value !== 'object') return;
+        if (Array.isArray(value)) {
+          for (const item of value) await visit(item);
+          return;
+        }
+
+        if (typeof value.attachmentData === 'string' && value.attachmentData.startsWith('data:')) {
+          try {
+            const stored = await saveAttachment(
+              value.attachmentName || value.title || 'attachment',
+              value.attachmentData,
+              board.id,
+              value.attachmentType
+            );
+            Object.assign(value, stored);
+            changed = Boolean(stored.attachmentPath) || changed;
+          } catch (error) {
+            console.error('Could not migrate an existing board attachment:', error);
+            failed = true;
+          }
+        }
+
+        for (const [key, child] of Object.entries(value)) {
+          if (key !== 'attachmentData') await visit(child);
+        }
+      }
+
+      await visit(board);
+      return { changed, failed };
+    }
+
+    function collectAttachmentPaths(value, paths = new Set()) {
+      if (!value || typeof value !== 'object') return paths;
+      if (Array.isArray(value)) {
+        value.forEach(item => collectAttachmentPaths(item, paths));
+        return paths;
+      }
+
+      if (typeof value.attachmentPath === 'string' && value.attachmentPath) {
+        paths.add(value.attachmentPath);
+      }
+      Object.values(value).forEach(child => collectAttachmentPaths(child, paths));
+      return paths;
+    }
+
+    function queueAttachmentCleanup(paths) {
+      paths?.forEach(path => pendingAttachmentDeletes.add(path));
+    }
+
+    async function cleanupUnusedAttachments() {
+      if (!currentAuthUser || pendingAttachmentDeletes.size === 0) return;
+      const referencedPaths = collectAttachmentPaths(studioState.boards);
+      const unusedPaths = [...pendingAttachmentDeletes].filter(path =>
+        path.startsWith(`${currentAuthUser.id}/`) && !referencedPaths.has(path)
+      );
+      if (!unusedPaths.length) {
+        [...pendingAttachmentDeletes].forEach(path => {
+          if (referencedPaths.has(path)) pendingAttachmentDeletes.delete(path);
+        });
+        return;
+      }
+
+      const { error } = await sb.storage.from(ATTACHMENTS_BUCKET).remove(unusedPaths);
+      if (error) throw error;
+      unusedPaths.forEach(path => pendingAttachmentDeletes.delete(path));
     }
 
     function isImageAttachment(item) {
@@ -855,28 +1188,298 @@
     }
 
     function getUserProfile() {
-      const saved = JSON.parse(localStorage.getItem(USER_KEY) || 'null') || {};
+      let saved = {};
+      try {
+        saved = JSON.parse(localStorage.getItem(USER_KEY) || 'null') || {};
+      } catch (err) {
+        console.warn('Could not read the saved Boardie profile:', err);
+      }
+      if (currentAuthUser && saved.authUserId !== currentAuthUser.id) saved = {};
+      const authName = saved.name || currentAuthUser?.user_metadata?.full_name || currentAuthUser?.email?.split('@')[0];
       return {
-        name: saved.name || 'Creator',
-        email: saved.email || 'creator@boardie.studio',
+        name: currentAuthUser ? (authName || 'Creator') : (saved.name || 'Creator'),
+        email: currentAuthUser?.email || saved.email || 'creator@boardie.studio',
+        role: saved.role || currentAuthUser?.user_metadata?.role || 'creator',
         plan: saved.plan || 'free',
-        billingMethod: saved.billingMethod || 'Card •••• 4242',
+        billingMethod: saved.billingMethod || 'Not connected',
         billingCycle: saved.billingCycle || 'Monthly',
         billingAddress: saved.billingAddress || ''
       };
     }
 
     function saveUserProfile(profile) {
-      localStorage.setItem(USER_KEY, JSON.stringify(profile));
+      const savedProfile = currentAuthUser
+        ? { ...profile, authUserId: currentAuthUser.id }
+        : profile;
+      try {
+        localStorage.setItem(USER_KEY, JSON.stringify(savedProfile));
+      } catch (err) {
+        console.warn('Could not save the Boardie profile locally:', err);
+        setStudioNotice('Could not save account preferences in this browser.');
+        return false;
+      }
       document.getElementById('userNameDisplay').textContent = profile.name || 'Creator';
+      return true;
     }
 
-    function initUser() {
+    function updateAuthBadgeUI() {
       const user = getUserProfile();
       document.getElementById('userNameDisplay').textContent = user.name || 'Creator';
+      const dot = document.getElementById('authStatusDot');
+      if (dot) {
+        dot.className = currentAuthUser
+          ? 'w-1.5 h-1.5 rounded-full bg-[#34D399]'
+          : 'w-1.5 h-1.5 rounded-full bg-amber-400';
+      }
     }
 
-    function logoutStudio() {
+    async function loadActiveEntitlement() {
+      if (!currentAuthUser) return;
+      try {
+        const { data, error } = await sb
+          .from('entitlements')
+          .select('tier_key, status')
+          .eq('user_id', currentAuthUser.id)
+          .eq('status', 'active')
+          .limit(1)
+          .maybeSingle();
+
+        if (error) throw error;
+
+        const tier = PLAN_INFO[data?.tier_key] ? data.tier_key : 'free';
+        saveUserProfile({ ...getUserProfile(), plan: tier });
+      } catch (err) {
+        console.warn('Could not load entitlement:', err);
+        saveUserProfile({ ...getUserProfile(), plan: 'free' });
+        const code = err?.code ? ` (${err.code})` : '';
+        setStudioNotice(`Could not load your plan${code}: ${err?.message || 'Supabase returned an error.'}`);
+      }
+    }
+
+    async function loadProfileFromSupabase() {
+      if (!currentAuthUser) return;
+      try {
+        const { data, error } = await sb
+          .from('profiles')
+          .select('full_name, role')
+          .eq('id', currentAuthUser.id)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) {
+          saveUserProfile({
+            ...getUserProfile(),
+            name: data.full_name || currentAuthUser.user_metadata?.full_name || currentAuthUser.email?.split('@')[0] || 'Creator',
+            role: data.role || 'creator'
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load profile:', err);
+        const code = err?.code ? ` (${err.code})` : '';
+        setStudioNotice(`Could not load your cloud profile${code}: ${err?.message || 'Supabase returned an error.'}`);
+      }
+    }
+
+    async function loadBoardsFromSupabase() {
+      if (!currentAuthUser || isReadOnlyMode) return false;
+      try {
+        const { data, error } = await sb
+          .from('boards')
+          .select('id, user_id, parent_id, title, description, payload, updated_at')
+          .eq('user_id', currentAuthUser.id)
+          .order('updated_at', { ascending: true });
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          if (!Object.keys(studioState.boards || {}).length) {
+            studioState = getDefaultState();
+          }
+          resetStudioHistory();
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(studioState));
+          } catch (err) {
+            console.warn('Could not cache local boards before the first cloud sync:', err);
+          }
+          await syncAllBoardsToSupabase();
+          return true;
+        }
+
+        const boardsMap = {};
+        data.forEach(row => {
+          const p = row.payload || {};
+          boardsMap[row.id] = {
+            id: row.id,
+            parentId: row.parent_id || null,
+            title: row.title || 'Untitled Board',
+            description: row.description || '',
+            subBoards: Array.isArray(p.subBoards) ? p.subBoards : [],
+            bin: Array.isArray(p.bin) ? p.bin : [],
+            cards: Array.isArray(p.cards) ? p.cards : []
+          };
+        });
+
+        const rootBoard = Object.values(boardsMap).find(b => b.parentId === null) || Object.values(boardsMap)[0];
+        const prevActive = studioState.activeBoardId;
+        studioState = {
+          activeBoardId: boardsMap[prevActive] ? prevActive : (rootBoard ? rootBoard.id : null),
+          boards: boardsMap
+        };
+        const migrationResults = await Promise.all(
+          Object.values(boardsMap).map(board => migrateLegacyAttachments(board))
+        );
+        if (migrationResults.some(result => result.failed)) {
+          setStudioNotice('Some existing attachments could not be moved to Storage. They remain in the board data.');
+        }
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(studioState));
+        } catch (err) {
+          console.warn('Could not cache loaded boards locally:', err);
+        }
+        if (migrationResults.some(result => result.changed) && !migrationResults.some(result => result.failed)) {
+          await syncAllBoardsToSupabase();
+        }
+        resetStudioHistory();
+        return true;
+      } catch (err) {
+        console.warn('Supabase board load fallback to localStorage:', err);
+        const code = err?.code ? ` (${err.code})` : '';
+        setStudioNotice(`Cloud board load failed${code}: ${err?.message || 'Supabase returned an error.'} Your local boards are still available.`);
+        return false;
+      }
+    }
+
+    async function syncAllBoardsToSupabase() {
+      if (!currentAuthUser || isReadOnlyMode) return;
+      const entries = Object.values(studioState.boards || {});
+      let attachmentsMigrated = false;
+      for (const b of entries) {
+        if (!b || !b.id) continue;
+        const migration = await migrateLegacyAttachments(b);
+        if (migration.failed) {
+          setStudioNotice('Could not move an attachment to Storage. Changes remain saved locally.');
+          return;
+        }
+        attachmentsMigrated = migration.changed || attachmentsMigrated;
+        const row = {
+          id: b.id,
+          user_id: currentAuthUser.id,
+          parent_id: b.parentId || null,
+          title: b.title || 'Untitled Board',
+          description: b.description || '',
+          payload: {
+            subBoards: b.subBoards || [],
+            cards: b.cards || [],
+            bin: b.bin || []
+          },
+          updated_at: new Date().toISOString()
+        };
+        let error;
+        try {
+          ({ error } = await sb.from('boards').upsert(row, { onConflict: 'id' }));
+        } catch (err) {
+          console.error('Board upsert request failed:', err);
+          const code = err?.code ? ` (${err.code})` : '';
+          setStudioNotice(`Cloud save failed${code}: ${err?.message || 'Could not reach Supabase.'} Your changes are saved locally.`);
+          return;
+        }
+        if (error) {
+          console.error('Board upsert error:', {
+            code: error.code,
+            message: error.message,
+            details: error.details,
+            hint: error.hint
+          });
+          const errorCode = error.code ? ` (${error.code})` : '';
+          setStudioNotice(`Cloud save failed${errorCode}: ${error.message} Your changes are saved locally.`);
+          return;
+        }
+      }
+      if (attachmentsMigrated) {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(studioState));
+        } catch (err) {
+          console.warn('Could not cache migrated attachments locally:', err);
+        }
+      }
+      try {
+        await cleanupUnusedAttachments();
+      } catch (err) {
+        console.error('Could not remove unused board attachments:', err);
+        setStudioNotice('An unused attachment could not be removed from Storage.');
+      }
+    }
+
+    function scheduleSupabaseSync() {
+      if (!currentAuthUser || isReadOnlyMode) return;
+      clearTimeout(supabaseSyncTimer);
+      supabaseSyncTimer = setTimeout(() => {
+        syncAllBoardsToSupabase();
+      }, 700);
+    }
+
+    async function hydrateStudioUser(userId) {
+      try {
+        await loadProfileFromSupabase();
+        if (currentAuthUser?.id !== userId) return;
+        await loadActiveEntitlement();
+        if (currentAuthUser?.id !== userId) return;
+        const loaded = await loadBoardsFromSupabase();
+        if (loaded) renderStudio();
+      } catch (err) {
+        console.error('Could not load Supabase account data:', err);
+        setStudioNotice(`Could not load your cloud data: ${err?.message || 'Supabase returned an error.'}`);
+      }
+    }
+
+    async function initStudioSession() {
+      try {
+        const { data, error } = await sb.auth.getSession();
+        if (error) throw error;
+        currentAuthUser = data?.session?.user || null;
+      } catch (err) {
+        currentAuthUser = null;
+        console.error('Could not check the Supabase session:', err);
+        setStudioNotice(`Could not verify your Supabase session: ${err?.message || 'Supabase returned an error.'}`);
+      }
+
+      updateAuthBadgeUI();
+
+      if (currentAuthUser && !isReadOnlyMode) {
+        await hydrateStudioUser(currentAuthUser.id);
+      }
+
+      sb.auth.onAuthStateChange((_event, session) => {
+        const nextUser = session?.user || null;
+        const changed = nextUser?.id !== currentAuthUser?.id;
+        currentAuthUser = nextUser;
+        if (changed && !nextUser) {
+          try {
+            const saved = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+            if (saved?.authUserId) localStorage.removeItem(USER_KEY);
+          } catch (err) {
+            console.warn('Could not clear the signed-out local profile:', err);
+          }
+        }
+        updateAuthBadgeUI();
+        if (changed && currentAuthUser && !isReadOnlyMode) {
+          const userId = currentAuthUser.id;
+          window.setTimeout(() => {
+            if (currentAuthUser?.id === userId) void hydrateStudioUser(userId);
+          }, 0);
+        }
+      });
+    }
+
+    async function logoutStudio() {
+      try {
+        const { error } = await sb.auth.signOut();
+        if (error) throw error;
+      } catch (err) {
+        console.error('Sign out error:', err);
+        setStudioNotice(`Could not sign out: ${err?.message || 'Supabase returned an error.'}`);
+        return;
+      }
+      currentAuthUser = null;
       localStorage.removeItem(USER_KEY);
       window.location.href = 'index.html';
     }
@@ -1291,8 +1894,8 @@
     }
 
     function getDefaultState() {
-      const rootId = 'board_night_shoot';
-      const subId = 'sub_wardrobe';
+      const rootId = crypto.randomUUID();
+      const subId = crypto.randomUUID();
       return {
         activeBoardId: rootId,
         boards: {
@@ -1301,7 +1904,7 @@
             parentId: null,
             title: 'Night Shoot — Scene 01',
             description: 'Moody low-key sequence with rain reflections and framing notes.',
-            subBoards: [{ id: subId, x: 24, y: 16 }],
+            subBoards: [{ id: subId, x: 24, y: 24 }],
             bin: [],
             cards: [
               {
@@ -1316,8 +1919,8 @@
                 attachmentName: '',
                 attachmentType: '',
                 attachmentData: '',
-                x: 300,
-                y: 16
+                x: 312,
+                y: 24
               },
               {
                 id: 'c2',
@@ -1328,8 +1931,8 @@
                   { id: 't2', text: 'Check rain machine water supply', done: false },
                   { id: 't3', text: 'Confirm talent call time', done: false }
                 ],
-                x: 740,
-                y: 16
+                x: 744,
+                y: 24
               },
               {
                 id: 'c3',
@@ -1337,8 +1940,8 @@
                 title: 'Camera & Lighting Column',
                 notes: 'Drag any card or sub-board into this column to group it here.',
                 cards: [],
-                x: 1120,
-                y: 16
+                x: 1128,
+                y: 24
               }
             ]
           },
@@ -1360,7 +1963,7 @@
                 attachmentType: '',
                 attachmentData: '',
                 x: 24,
-                y: 16
+                y: 24
               }
             ]
           }
@@ -1399,15 +2002,79 @@
       studioState = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null') || getDefaultState();
     }
 
+    const MAX_UNDO_STEPS = 100;
+    let undoHistory = [];
+    let redoHistory = [];
+    let lastHistorySnapshot = cloneHistoryState(studioState.boards);
+    let lastHistorySignature = JSON.stringify(studioState.boards);
+    let selectedCanvasItem = null;
+    let canvasContextTarget = null;
+    let canvasContextSpot = null;
+
+    function cloneHistoryState(value) {
+      if (Array.isArray(value)) return value.map(cloneHistoryState);
+      if (value && typeof value === 'object') {
+        return Object.fromEntries(
+          Object.entries(value).map(([key, child]) => [key, cloneHistoryState(child)])
+        );
+      }
+      return value;
+    }
+
+    function resetStudioHistory() {
+      undoHistory = [];
+      redoHistory = [];
+      lastHistorySnapshot = cloneHistoryState(studioState.boards || {});
+      lastHistorySignature = JSON.stringify(studioState.boards || {});
+    }
+
+    function recordStudioHistory() {
+      const currentSnapshot = JSON.stringify(studioState.boards);
+      if (currentSnapshot === lastHistorySignature) return;
+      undoHistory.push(lastHistorySnapshot);
+      if (undoHistory.length > MAX_UNDO_STEPS) undoHistory.shift();
+      redoHistory = [];
+      lastHistorySnapshot = cloneHistoryState(studioState.boards);
+      lastHistorySignature = currentSnapshot;
+    }
+
     function saveState() {
       if (isReadOnlyMode) return;
+      cachedPdfRender = null;
       try {
+        recordStudioHistory();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(studioState));
         setStudioNotice('');
       } catch (err) {
         console.warn('Could not save studio state to localStorage:', err);
         setStudioNotice('Storage full — remove an older image or clear the Bin to keep saving changes.');
       }
+      scheduleSupabaseSync();
+    }
+
+    function applyStudioHistory(source, destination, statusMessage) {
+      if (isReadOnlyMode || source.length === 0) return false;
+      destination.push(cloneHistoryState(studioState.boards));
+      studioState.boards = source.pop();
+      if (!studioState.boards[studioState.activeBoardId]) {
+        const fallback = Object.values(studioState.boards).find(board => board.parentId === null)
+          || Object.values(studioState.boards)[0];
+        studioState.activeBoardId = fallback?.id || null;
+      }
+      lastHistorySnapshot = cloneHistoryState(studioState.boards);
+      lastHistorySignature = JSON.stringify(studioState.boards);
+      saveState();
+      renderStudio();
+      setStudioNotice(statusMessage);
+      return true;
+    }
+
+    function undoStudioChange() {
+      return applyStudioHistory(undoHistory, redoHistory, 'Undid the last canvas change.');
+    }
+
+    function redoStudioChange() {
+      return applyStudioHistory(redoHistory, undoHistory, 'Redid the canvas change.');
     }
 
     function applyReadOnlyUI() {
@@ -1452,6 +2119,9 @@
     function selectBoard(boardId) {
       if (!studioState.boards[boardId]) return;
       studioState.activeBoardId = boardId;
+      selectedCanvasItem = null;
+      closeCanvasContextMenu();
+      cachedPdfRender = null;
       saveState();
       closeProjectsPopover();
       closeColorPickerPopover();
@@ -1470,7 +2140,7 @@
 
     function createNewRootProject() {
       if (isReadOnlyMode) return;
-      const newId = 'board_' + Date.now();
+      const newId = (crypto?.randomUUID ? crypto.randomUUID() : 'board_' + Date.now());
       const count = getRootBoards().length + 1;
       studioState.boards[newId] = {
         id: newId,
@@ -1504,7 +2174,7 @@
       document.getElementById('deleteConfirmModal').classList.add('hidden');
     }
 
-    function confirmDeleteProjectBoard() {
+    async function confirmDeleteProjectBoard() {
       const boardId = pendingDeleteBoardId;
       closeDeleteConfirmModal();
       if (!boardId || isReadOnlyMode) return;
@@ -1512,11 +2182,30 @@
       const roots = getRootBoards();
       if (roots.length <= 1 || !studioState.boards[boardId]) return;
 
+      const removedIds = [];
+      const removedBoards = {};
+      const removedAttachmentPaths = new Set();
       Object.keys(studioState.boards).forEach(id => {
         if (id === boardId || studioState.boards[id].parentId === boardId) {
+          removedIds.push(id);
+          removedBoards[id] = studioState.boards[id];
+          collectAttachmentPaths(studioState.boards[id], removedAttachmentPaths);
           delete studioState.boards[id];
         }
       });
+
+      if (currentAuthUser && removedIds.length > 0) {
+        try {
+          const { error } = await sb.from('boards').delete().in('id', removedIds).eq('user_id', currentAuthUser.id);
+          if (error) throw error;
+        } catch (err) {
+          console.error('Could not delete board from Supabase:', err);
+          Object.assign(studioState.boards, removedBoards);
+          setStudioNotice('Could not delete the project board. Please try again.');
+          renderStudio();
+          return;
+        }
+      }
 
       const currentChainRoot = getBreadcrumbChain(studioState.activeBoardId)[0]?.id;
       if (!currentChainRoot || currentChainRoot === boardId) {
@@ -1527,6 +2216,7 @@
       saveState();
       closeProjectsPopover();
       renderStudio();
+      queueAttachmentCleanup([...removedAttachmentPaths]);
     }
 
     let draggedToolType = null;
@@ -1560,8 +2250,8 @@
 
       const surface = document.getElementById('spatialSurface');
       const rect = surface.getBoundingClientRect();
-      const dropX = Math.max(16, Math.round((event.clientX - rect.left) / currentZoom - 120));
-      const dropY = Math.max(12, Math.round((event.clientY - rect.top) / currentZoom - 24));
+      const dropX = snapToGrid((event.clientX - rect.left) / currentZoom - 120);
+      const dropY = snapToGrid((event.clientY - rect.top) / currentZoom - 24);
 
       if (type === 'image') {
         startImageUploadTool({ x: dropX, y: dropY });
@@ -1575,8 +2265,8 @@
     function getNextSpot(board) {
       const count = (board.subBoards?.length || 0) + (board.cards?.length || 0);
       return {
-        x: 24 + (count % 3) * 420,
-        y: 16 + Math.floor(count / 3) * 440
+        x: snapToGrid(24 + (count % 3) * 432),
+        y: snapToGrid(24 + Math.floor(count / 3) * 432)
       };
     }
 
@@ -1595,11 +2285,12 @@
       const board = studioState.boards[studioState.activeBoardId];
       if (!board) return;
 
-      const spot = customSpot || getNextSpot(board);
+      const rawSpot = customSpot || getNextSpot(board);
+      const spot = { x: snapToGrid(rawSpot.x), y: snapToGrid(rawSpot.y) };
       let createdId = null;
 
       if (type === 'subboard') {
-        const newId = 'board_' + Date.now();
+        const newId = (crypto?.randomUUID ? crypto.randomUUID() : 'board_' + Date.now());
         const subCount = (board.subBoards?.length || 0) + 1;
         studioState.boards[newId] = {
           id: newId,
@@ -1697,21 +2388,36 @@
       const board = studioState.boards[studioState.activeBoardId];
       if (!board) return;
 
-      const targetSpot = spot || getNextSpot(board);
-      setStudioNotice(`Processing "${file.name}"...`);
-
+      const rawSpot = spot || getNextSpot(board);
+      const targetSpot = { x: snapToGrid(rawSpot.x), y: snapToGrid(rawSpot.y) };
+      const progressId = startUploadProgress(file);
       const reader = new FileReader();
       reader.onerror = () => {
+        finishUploadProgress(progressId, false, 'Could not read file');
         setStudioNotice(`Could not read "${file.name}". Please try another image.`);
+      };
+      reader.onprogress = (progressEvent) => {
+        if (progressEvent.lengthComputable && progressEvent.total) {
+          updateUploadProgress(progressId, 'Reading file', (progressEvent.loaded / progressEvent.total) * 100);
+        }
       };
       reader.onload = async () => {
         try {
           const rawDataUrl = String(reader.result || '');
           if (!rawDataUrl) {
+            finishUploadProgress(progressId, false, 'Empty image file');
             setStudioNotice(`Empty image data in "${file.name}".`);
             return;
           }
+          updateUploadProgress(progressId, 'Preparing image');
           const compressedDataUrl = await compressImageDataUrl(rawDataUrl);
+          const stored = await saveAttachment(
+            file.name,
+            compressedDataUrl,
+            board.id,
+            'image/jpeg',
+            status => updateUploadProgress(progressId, status)
+          );
           const cleanTitle = file.name.replace(/\.[^/.]+$/, '') || 'Image';
           const newId = 'card_' + Date.now();
 
@@ -1720,16 +2426,17 @@
             type: 'image',
             title: cleanTitle,
             attachmentName: file.name,
-            attachmentType: 'image/jpeg',
-            attachmentData: compressedDataUrl,
+            ...stored,
             x: targetSpot.x,
             y: targetSpot.y
           });
 
           saveState();
           renderStudio();
+          finishUploadProgress(progressId, true, 'Added to board');
         } catch (err) {
           console.error('Image upload error:', err);
+          finishUploadProgress(progressId, false, 'Upload failed');
           setStudioNotice('Image upload failed. Try a smaller image file.');
         }
       };
@@ -1748,6 +2455,7 @@
       targetCard.attachmentName = imageCard.attachmentName || `${imageCard.title}.jpg`;
       targetCard.attachmentType = imageCard.attachmentType || 'image/jpeg';
       targetCard.attachmentData = imageCard.attachmentData;
+      targetCard.attachmentPath = imageCard.attachmentPath || '';
 
       if (targetCard.type === 'mood') {
         targetCard.colors = await extractColorsFromDataUrl(imageCard.attachmentData, 5);
@@ -1784,23 +2492,51 @@
       const board = studioState.boards[studioState.activeBoardId];
       if (!board) return;
 
-      const targetSpot = spot || getNextSpot(board);
+      const rawSpot = spot || getNextSpot(board);
+      const targetSpot = { x: snapToGrid(rawSpot.x), y: snapToGrid(rawSpot.y) };
+      const progressId = startUploadProgress(file);
+      const input = event.target;
+      if (input) input.value = '';
       const reader = new FileReader();
-      reader.onload = () => {
+      reader.onerror = () => {
+        finishUploadProgress(progressId, false, 'Could not read file');
+        setStudioNotice(`Could not read "${file.name}". Please try again.`);
+      };
+      reader.onprogress = (progressEvent) => {
+        if (progressEvent.lengthComputable && progressEvent.total) {
+          updateUploadProgress(progressId, 'Reading file', (progressEvent.loaded / progressEvent.total) * 100);
+        }
+      };
+      reader.onload = async () => {
         const newId = 'card_' + Date.now();
-        board.cards.push({
-          id: newId,
-          type: 'doc',
-          title: file.name,
-          attachmentName: file.name,
-          attachmentType: file.type || 'application/octet-stream',
-          attachmentData: reader.result,
-          notes: 'Attached production document or PDF.',
-          x: targetSpot.x,
-          y: targetSpot.y
-        });
-        saveState();
-        renderStudio();
+        try {
+          const dataUrl = String(reader.result || '');
+          if (!dataUrl) throw new Error('The selected file was empty.');
+          const stored = await saveAttachment(
+            file.name,
+            dataUrl,
+            board.id,
+            file.type || 'application/octet-stream',
+            status => updateUploadProgress(progressId, status)
+          );
+          board.cards.push({
+            id: newId,
+            type: 'doc',
+            title: file.name,
+            attachmentName: file.name,
+            ...stored,
+            notes: 'Attached production document or PDF.',
+            x: targetSpot.x,
+            y: targetSpot.y
+          });
+          saveState();
+          renderStudio();
+          finishUploadProgress(progressId, true, 'Added to board');
+        } catch (err) {
+          console.error('Document upload error:', err);
+          finishUploadProgress(progressId, false, 'Upload failed');
+          setStudioNotice(`Could not upload "${file.name}". Please try again.`);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -1816,6 +2552,7 @@
       if (kind === 'subboard') {
         const refIdx = (board.subBoards || []).findIndex(s => s.id === id);
         if (refIdx === -1) return;
+        if (board.subBoards[refIdx].locked) return;
         const [ref] = board.subBoards.splice(refIdx, 1);
         const sub = studioState.boards[id];
         if (!sub) return;
@@ -1826,12 +2563,14 @@
           title: sub.title,
           cardCount: sub.cards?.length || 0,
           x: ref.x,
-          y: ref.y
+          y: ref.y,
+          locked: ref.locked
         });
       } else {
         if (id === columnCardId) return;
         const idx = (board.cards || []).findIndex(c => c.id === id);
         if (idx === -1) return;
+        if (board.cards[idx].locked) return;
         const [movedCard] = board.cards.splice(idx, 1);
         columnCard.cards.push({
           ...movedCard,
@@ -1853,6 +2592,7 @@
 
       const idx = sourceCol.cards.findIndex(item => item.id === nestedId);
       if (idx === -1) return;
+      if (sourceCol.cards[idx].locked) return;
       const [item] = sourceCol.cards.splice(idx, 1);
 
       if (sourceColumnId === targetColumnId) {
@@ -1873,12 +2613,14 @@
       if (!columnCard || !columnCard.cards) return;
       const idx = columnCard.cards.findIndex(item => item.id === nestedId);
       if (idx === -1) return;
+      if (columnCard.cards[idx].locked) return;
       const [item] = columnCard.cards.splice(idx, 1);
-      const spot = dropSpot || getNextSpot(board);
+      const rawSpot = dropSpot || getNextSpot(board);
+      const spot = { x: snapToGrid(rawSpot.x), y: snapToGrid(rawSpot.y) };
 
       if (item.kind === 'subboard' && item.subId && studioState.boards[item.subId]) {
         board.subBoards = board.subBoards || [];
-        board.subBoards.push({ id: item.subId, x: spot.x, y: spot.y });
+        board.subBoards.push({ id: item.subId, x: spot.x, y: spot.y, locked: item.locked });
       } else {
         const { kind, ...rest } = item;
         board.cards.push({
@@ -1899,6 +2641,7 @@
       if (!columnCard || !Array.isArray(columnCard.cards)) return;
       const idx = columnCard.cards.findIndex(item => item.id === nestedId);
       if (idx === -1) return;
+      if (columnCard.cards[idx].locked) return;
       const targetIdx = idx + direction;
       if (targetIdx < 0 || targetIdx >= columnCard.cards.length) return;
       const [item] = columnCard.cards.splice(idx, 1);
@@ -1914,14 +2657,20 @@
       if (!columnCard || !Array.isArray(columnCard.cards)) return;
       const idx = columnCard.cards.findIndex(item => item.id === nestedId);
       if (idx === -1) return;
+      const columnSnapshot = snapshotCardForBin(columnCard);
       const [removed] = columnCard.cards.splice(idx, 1);
-      board.bin = board.bin || [];
-      board.bin.unshift({
-        binId: 'bin_' + Date.now(),
-        kind: removed.kind === 'subboard' ? 'subboard' : 'card',
-        deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        data: { ...removed, attachmentData: '' }
-      });
+      const emptyColumnMoved = moveEmptyCardToBin(board, columnCard, columnSnapshot);
+      if (emptyColumnMoved) {
+        setStudioNotice('Empty column moved to the Bin. Restore it from the Bin if needed.');
+      } else {
+        board.bin = board.bin || [];
+        board.bin.unshift({
+          binId: 'bin_' + Date.now(),
+          kind: removed.kind === 'subboard' ? 'subboard' : 'card',
+          deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          data: { ...removed }
+        });
+      }
       saveState();
       renderStudio();
     }
@@ -1929,7 +2678,7 @@
     function renderColumnNestedItems(columnCard) {
       const items = columnCard.cards || [];
       if (items.length === 0) {
-        return `<div class="rounded-xl border border-dashed border-[#262626] p-3 text-center text-[11px] text-neutral-500 select-none">Drop Shot, Mood, Image, Swatch, Note, Doc, To-Do, or Sub-Board here</div>`;
+        return `<div class="pdf-editor-hint rounded-xl border border-dashed border-[#262626] p-3 text-center text-[11px] text-neutral-500 select-none">Drop Shot, Mood, Image, Swatch, Note, Doc, To-Do, or Sub-Board here</div>`;
       }
 
       return items.map((item, idx) => {
@@ -1957,15 +2706,15 @@
           <div
             data-column-id="${columnCard.id}"
             data-nested-id="${item.id}"
-            class="column-nested-item bg-[#0A0A0A] border border-[#262626] rounded-xl p-2.5 space-y-1.5"
+            class="column-nested-item relative bg-[#0A0A0A] border border-[#262626] rounded-xl p-2.5 space-y-1.5"
           >
             <div class="nested-drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-1 text-[10px] select-none" title="Drag to move into another column or onto canvas">
               <span class="font-bold uppercase tracking-wider ${badgeColor} whitespace-nowrap">&#8942;&#8942; ${escapeHtml(label)}</span>
               ${!isReadOnlyMode ? `
-                <div class="flex items-center gap-1 text-neutral-500 shrink-0">
-                  <button onclick="reorderColumnItem('${columnCard.id}', '${item.id}', -1)" ${idx === 0 ? 'disabled' : ''} title="Move up" class="hover:text-white disabled:opacity-30 px-1">&uarr;</button>
-                  <button onclick="reorderColumnItem('${columnCard.id}', '${item.id}', 1)" ${idx === items.length - 1 ? 'disabled' : ''} title="Move down" class="hover:text-white disabled:opacity-30 px-1">&darr;</button>
-                  <button onclick="popOutColumnItem('${columnCard.id}', '${item.id}')" title="Move back to canvas" class="hover:text-amber-300 px-1 whitespace-nowrap">Pop Out</button>
+                <div class="pdf-hide-control flex items-center gap-1 text-neutral-500 shrink-0">
+                  <button onclick="reorderColumnItem('${columnCard.id}', '${item.id}', -1)" ${idx === 0 || item.locked ? 'disabled' : ''} title="${item.locked ? 'Unlock this item to move it' : 'Move up'}" class="hover:text-white disabled:opacity-30 px-1">&uarr;</button>
+                  <button onclick="reorderColumnItem('${columnCard.id}', '${item.id}', 1)" ${idx === items.length - 1 || item.locked ? 'disabled' : ''} title="${item.locked ? 'Unlock this item to move it' : 'Move down'}" class="hover:text-white disabled:opacity-30 px-1">&darr;</button>
+                  <button onclick="popOutColumnItem('${columnCard.id}', '${item.id}')" ${item.locked ? 'disabled' : ''} title="${item.locked ? 'Unlock this item to move it' : 'Move back to canvas'}" class="hover:text-amber-300 disabled:opacity-30 disabled:cursor-not-allowed px-1 whitespace-nowrap">Pop Out</button>
                   <button onclick="deleteColumnItem('${columnCard.id}', '${item.id}')" title="Move to Bin" class="hover:text-red-400 px-1">&times;</button>
                 </div>
               ` : ''}
@@ -1979,7 +2728,7 @@
             ` : ''}
             ${item.notes ? `<p class="text-[11px] text-neutral-400 line-clamp-2">${escapeHtml(item.notes)}</p>` : ''}
             ${item.kind === 'subboard' && item.subId ? `
-              <button onclick="selectBoard('${item.subId}')" class="text-[10px] text-[#60A5FA] hover:underline">Open Sub-Board &rarr;</button>
+              <button onclick="selectBoard('${item.subId}')" class="pdf-hide-control text-[10px] text-[#60A5FA] hover:underline">Open Sub-Board &rarr;</button>
             ` : ''}
           </div>
         `;
@@ -2034,18 +2783,23 @@
       if (!board) return;
       const card = board.cards.find(c => c.id === cardId);
       if (!card) return;
+      const cardSnapshot = snapshotCardForBin(card);
 
       if (field === 'color') {
         card.color = normalizeHex(value);
       } else {
         const cleaned = value.trim();
-        if (field === 'title' && !cleaned) {
-          renderStudio();
-          return;
-        }
         card[field] = cleaned;
       }
 
+      if (moveEmptyCardToBin(board, card, cardSnapshot)) {
+        saveState();
+        renderStudio();
+        setStudioNotice('Empty card moved to the Bin. Restore it from the Bin if needed.');
+        return;
+      }
+
+      if (field === 'title' && !card.title) card.title = 'Untitled';
       saveState();
       renderStudio();
     }
@@ -2074,7 +2828,13 @@
           if (!ctx) return resolve(['#0A0A0A', '#10B981', '#34D399', '#9333EA', '#E5E5E5']);
 
           ctx.drawImage(img, 0, 0, size, size);
-          const { data } = ctx.getImageData(0, 0, size, size);
+          let data;
+          try {
+            data = ctx.getImageData(0, 0, size, size).data;
+          } catch (error) {
+            console.warn('Could not read attachment colors:', error);
+            return resolve(['#0A0A0A', '#10B981', '#34D399', '#9333EA', '#E5E5E5']);
+          }
           const buckets = new Map();
 
           for (let i = 0; i < data.length; i += 4) {
@@ -2116,6 +2876,7 @@
           resolve(picked.slice(0, swatchCount));
         };
         img.onerror = () => resolve(['#0A0A0A', '#10B981', '#34D399', '#9333EA', '#E5E5E5']);
+        img.crossOrigin = 'anonymous';
         img.src = dataUrl;
       });
     }
@@ -2137,7 +2898,14 @@
       const card = board?.cards.find(c => c.id === cardId);
       const item = card?.items?.find(i => i.id === itemId);
       if (!item) return;
+      const cardSnapshot = snapshotCardForBin(card);
       item.text = text.trim() || 'Untitled task';
+      if (moveEmptyCardToBin(board, card, cardSnapshot)) {
+        saveState();
+        renderStudio();
+        setStudioNotice('Empty card moved to the Bin. Restore it from the Bin if needed.');
+        return;
+      }
       saveState();
     }
 
@@ -2157,7 +2925,14 @@
       const board = studioState.boards[studioState.activeBoardId];
       const card = board?.cards.find(c => c.id === cardId);
       if (!card || !card.items) return;
+      const cardSnapshot = snapshotCardForBin(card);
       card.items = card.items.filter(i => i.id !== itemId);
+      if (moveEmptyCardToBin(board, card, cardSnapshot)) {
+        saveState();
+        renderStudio();
+        setStudioNotice('Empty card moved to the Bin. Restore it from the Bin if needed.');
+        return;
+      }
       saveState();
       renderStudio();
     }
@@ -2182,22 +2957,48 @@
       const card = board?.cards.find(c => c.id === cardId);
       if (!card) return;
 
+      const progressId = startUploadProgress(file);
       const reader = new FileReader();
-      reader.onload = async () => {
-        const mimeType = file.type || 'application/octet-stream';
-        const isImage = mimeType.startsWith('image/') || /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(String(reader.result || ''));
-        const finalDataUrl = isImage ? await compressImageDataUrl(String(reader.result || '')) : reader.result;
-
-        card.attachmentName = file.name;
-        card.attachmentType = isImage ? 'image/jpeg' : mimeType;
-        card.attachmentData = finalDataUrl;
-
-        if (card.type === 'mood' && isImage) {
-          card.colors = await extractColorsFromDataUrl(finalDataUrl, 5);
+      reader.onerror = () => {
+        finishUploadProgress(progressId, false, 'Could not read file');
+        setStudioNotice(`Could not read "${file.name}". Please try again.`);
+      };
+      reader.onprogress = (progressEvent) => {
+        if (progressEvent.lengthComputable && progressEvent.total) {
+          updateUploadProgress(progressId, 'Reading file', (progressEvent.loaded / progressEvent.total) * 100);
         }
+      };
+      reader.onload = async () => {
+        try {
+          const mimeType = file.type || 'application/octet-stream';
+          const isImage = mimeType.startsWith('image/') || /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(String(reader.result || ''));
+          updateUploadProgress(progressId, isImage ? 'Preparing image' : 'Preparing attachment');
+          const finalDataUrl = isImage ? await compressImageDataUrl(String(reader.result || '')) : String(reader.result || '');
+          const stored = await saveAttachment(
+            file.name,
+            finalDataUrl,
+            board.id,
+            isImage ? 'image/jpeg' : mimeType,
+            status => updateUploadProgress(progressId, status)
+          );
 
-        saveState();
-        renderStudio();
+          card.attachmentName = file.name;
+          card.attachmentType = stored.attachmentType;
+          card.attachmentData = stored.attachmentData;
+          card.attachmentPath = stored.attachmentPath;
+
+          if (card.type === 'mood' && isImage) {
+            card.colors = await extractColorsFromDataUrl(finalDataUrl, 5);
+          }
+
+          saveState();
+          renderStudio();
+          finishUploadProgress(progressId, true, 'Added to board');
+        } catch (err) {
+          console.error('Card attachment upload error:', err);
+          finishUploadProgress(progressId, false, 'Upload failed');
+          setStudioNotice(`Could not upload "${file.name}". Please try again.`);
+        }
       };
       reader.readAsDataURL(file);
     }
@@ -2207,11 +3008,28 @@
       const board = studioState.boards[studioState.activeBoardId];
       const card = board?.cards.find(c => c.id === cardId);
       if (!card) return;
+      const attachmentPath = card.attachmentPath;
+      const attachmentName = card.attachmentName;
+      const cardWithoutAttachment = {
+        ...card,
+        attachmentName: '',
+        attachmentType: '',
+        attachmentData: '',
+        attachmentPath: ''
+      };
+      if (isCardEffectivelyEmpty(cardWithoutAttachment, attachmentName) && moveCardToBin(board, card)) {
+        saveState();
+        renderStudio();
+        setStudioNotice('Empty card moved to the Bin. Restore it from the Bin if needed.');
+        return;
+      }
       card.attachmentName = '';
       card.attachmentType = '';
       card.attachmentData = '';
+      card.attachmentPath = '';
       saveState();
       renderStudio();
+      if (attachmentPath) queueAttachmentCleanup([attachmentPath]);
     }
 
     function renderAttachmentBlock(card) {
@@ -2222,7 +3040,7 @@
             <img src="${card.attachmentData}" alt="${escapeHtml(card.attachmentName || 'Reference')}" class="w-full h-auto max-h-72 object-contain mx-auto" />
             <div class="flex items-center justify-between px-2.5 py-1.5 bg-[#0A0A0A]/90 text-[10px] text-neutral-300">
               <span class="truncate">${escapeHtml(card.attachmentName)}</span>
-              ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="text-red-400 hover:text-red-300 ml-2 shrink-0 whitespace-nowrap">Remove</button>` : ''}
+              ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="pdf-hide-file-btn text-red-400 hover:text-red-300 ml-2 shrink-0 whitespace-nowrap">Remove</button>` : ''}
             </div>
           </div>
         `;
@@ -2233,7 +3051,7 @@
           <a href="${card.attachmentData}" download="${escapeHtml(card.attachmentName || 'file')}" class="text-sky-300 hover:underline truncate">
             &#128196; ${escapeHtml(card.attachmentName || 'Attached Document')}
           </a>
-          ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="text-[11px] text-red-400 hover:text-red-300 shrink-0">&times;</button>` : ''}
+          ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="pdf-hide-file-btn text-[11px] text-red-400 hover:text-red-300 shrink-0">&times;</button>` : ''}
         </div>
       `;
     }
@@ -2299,7 +3117,7 @@
       document.getElementById('projectBoardsList').innerHTML = rootBoards.map(b => {
         const active = b.id === topRootId;
         return `
-          <div class="flex items-center justify-between gap-1.5 rounded-xl px-2 py-1 transition ${
+          <div data-project-board-id="${b.id}" class="flex items-center justify-between gap-1.5 rounded-xl px-2 py-1 transition ${
             active ? 'bg-[#9333EA]/15 text-white font-semibold' : 'text-neutral-400 hover:text-white hover:bg-[#0A0A0A]'
           }">
             <button onclick="selectBoard('${b.id}')" class="flex-1 min-w-0 text-left px-1 py-1 text-xs flex items-center justify-between gap-2">
@@ -2343,6 +3161,7 @@
         container.innerHTML = '';
         emptyState.classList.remove('hidden');
         applyReadOnlyUI();
+        applyCanvasSelection();
         return;
       }
 
@@ -2363,7 +3182,7 @@
             ${renderResizeHandles()}
             <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between mb-2 select-none">
               <span class="text-[10px] font-bold uppercase tracking-wider text-[#60A5FA] whitespace-nowrap">Sub-Board</span>
-              <div class="flex items-center gap-2 shrink-0">
+              <div class="pdf-hide-control flex items-center gap-2 shrink-0">
                 <button onclick="event.stopPropagation(); selectBoard('${sub.id}')" class="text-[10px] text-neutral-400 hover:text-white whitespace-nowrap">Open &rarr;</button>
                 <button onclick="event.stopPropagation(); deleteSubBoard('${sub.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition">&times;</button>
               </div>
@@ -2393,10 +3212,10 @@
               class="canvas-item group absolute w-72 select-none"
             >
               ${renderResizeHandles()}
-              <div class="drag-handle cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 mb-1.5 flex items-center justify-between gap-2 px-1">
+              <div class="pdf-hide-control drag-handle cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-150 mb-1.5 flex items-center justify-between gap-2 px-1">
                 <span class="text-[10px] font-medium tracking-wide text-teal-300/90 bg-[#0A0A0A]/85 backdrop-blur-sm px-2 py-0.5 rounded-full border border-white/10 truncate" title="Drag onto a Mood Card or Shot Card to assign">Drag to Mood / Shot</span>
                 <div class="flex items-center gap-1 shrink-0">
-                  <button onclick="triggerCardUpload('${card.id}')" title="Replace image" class="px-2 py-0.5 rounded-full text-[10px] leading-none bg-[#0A0A0A]/85 hover:bg-[#171717] text-neutral-200 border border-white/10 backdrop-blur-sm whitespace-nowrap">Replace</button>
+                  <button onclick="triggerCardUpload('${card.id}')" title="Replace image" class="pdf-hide-file-btn px-2 py-0.5 rounded-full text-[10px] leading-none bg-[#0A0A0A]/85 hover:bg-[#171717] text-neutral-200 border border-white/10 backdrop-blur-sm whitespace-nowrap">Replace</button>
                   <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="w-5 h-5 rounded-full flex items-center justify-center text-xs leading-none bg-[#0A0A0A]/85 hover:bg-[#171717] text-neutral-300 hover:text-red-400 border border-white/10 backdrop-blur-sm">&times;</button>
                 </div>
               </div>
@@ -2432,7 +3251,7 @@
                   onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
                   class="text-xs font-semibold text-[#A855F7] uppercase tracking-wider leading-snug outline-none focus:text-white rounded px-1"
                 >${escapeHtml(card.title)}</span>
-                <span class="text-[11px] text-neutral-400 mt-1.5 leading-snug select-none whitespace-nowrap">${escapeHtml(ratioValue)} Frame • Drop Image Here</span>
+                <span class="pdf-editor-hint text-[11px] text-neutral-400 mt-1.5 leading-snug select-none whitespace-nowrap">${escapeHtml(ratioValue)} Frame • Drop Image Here</span>
               </div>`;
 
           html += `
@@ -2451,19 +3270,20 @@
                     type="button"
                     onclick="triggerCardUpload('${card.id}')"
                     title="Attach reference image"
-                    class="inline-flex items-center justify-center px-2.5 py-1.5 rounded text-[11px] font-medium bg-[#0A0A0A] hover:bg-[#222222] text-neutral-200 border border-[#262626] whitespace-nowrap shrink-0"
+                    class="pdf-hide-file-btn inline-flex items-center justify-center px-2.5 py-1.5 rounded text-[11px] font-medium bg-[#0A0A0A] hover:bg-[#222222] text-neutral-200 border border-[#262626] whitespace-nowrap shrink-0"
                   ><span class="leading-none">+ File</span></button>
                   <button
                     type="button"
                     onclick="cycleShotRatio('${card.id}')"
                     title="Cycle aspect ratio (16:9, 2.39:1, 3:2, 4:3, 1:1, 4:5, 9:16)"
-                    class="inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold bg-[#9333EA]/15 hover:bg-[#9333EA]/30 text-[#A855F7] border border-[#9333EA]/40 transition-colors whitespace-nowrap shrink-0"
+                    class="shot-ratio-btn inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-semibold bg-[#9333EA]/15 hover:bg-[#9333EA]/30 text-[#A855F7] border border-[#9333EA]/40 transition-colors whitespace-nowrap shrink-0"
                   ><span class="leading-none">${escapeHtml(ratioValue)}</span><svg class="w-3 h-3 block shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg></button>
+                  <span class="shot-ratio-plain text-[11px] font-mono font-semibold text-[#A855F7] px-1">${escapeHtml(ratioValue)}</span>
                   <button
                     type="button"
                     onclick="deleteCard('${card.id}')"
                     title="Move to Bin"
-                    class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0 px-1"
+                    class="pdf-hide-control opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0 px-1"
                   >&times;</button>
                 </div>
               </div>
@@ -2499,7 +3319,7 @@
                 <img src="${card.attachmentData}" alt="${escapeHtml(card.title)}" class="w-full h-auto max-h-80 object-contain block mx-auto" />
                 <div class="bg-[#0A0A0A]/95 border-t border-[#262626] px-2.5 py-2 flex items-center justify-between gap-2">
                   <span data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-base text-white leading-tight outline-none focus:text-[#34D399] rounded px-1 truncate">${escapeHtml(card.title)}</span>
-                  ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="text-[10px] leading-none text-neutral-300 hover:text-red-400 bg-[#171717] border border-[#262626] px-2 py-1 rounded shrink-0 whitespace-nowrap">Clear</button>` : ''}
+                  ${!isReadOnlyMode ? `<button onclick="clearCardAttachment('${card.id}')" class="pdf-hide-file-btn text-[10px] leading-none text-neutral-300 hover:text-red-400 bg-[#171717] border border-[#262626] px-2 py-1 rounded shrink-0 whitespace-nowrap">Clear</button>` : ''}
                 </div>
               </div>`
             : `<div
@@ -2508,7 +3328,7 @@
                 class="aspect-[16/10] rounded-xl bg-gradient-to-br from-[#10B981]/20 via-[#0A0A0A] to-[#9333EA]/15 border border-dashed border-[#262626] hover:border-[#34D399]/60 flex flex-col items-center justify-center p-3 text-center transition cursor-pointer"
               >
                 <span data-focus-id="${card.id}" contenteditable="true" spellcheck="false" ondblclick="event.stopPropagation()" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-[#34D399] rounded px-1">${escapeHtml(card.title)}</span>
-                <span class="text-[10px] text-neutral-500 mt-1 select-none">Drag image here or click "+ File"</span>
+                <span class="pdf-editor-hint text-[10px] text-neutral-500 mt-1 select-none">Drag image here or click "+ File"</span>
               </div>`;
 
           const swatches = (card.colors || []).map(hex => `
@@ -2535,8 +3355,8 @@
               <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none">
                 <span class="text-xs font-bold uppercase tracking-wider text-[#34D399] whitespace-nowrap shrink-0">Mood Card</span>
                 <div class="flex items-center gap-1.5 shrink-0">
-                  <button onclick="triggerCardUpload('${card.id}')" title="Upload image to extract palette" class="px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
-                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                  <button onclick="triggerCardUpload('${card.id}')" title="Upload image to extract palette" class="pdf-hide-file-btn px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
+                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="pdf-hide-control opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
                 </div>
               </div>
 
@@ -2564,9 +3384,9 @@
                     type="button"
                     onclick="event.stopPropagation(); openColorPickerForSwatch('${card.id}', this)"
                     title="Open color picker & dropper"
-                    class="px-2.5 py-1 rounded text-[10px] leading-none bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/30 whitespace-nowrap shrink-0"
+                    class="pdf-hide-control px-2.5 py-1 rounded text-[10px] leading-none bg-fuchsia-500/15 hover:bg-fuchsia-500/25 text-fuchsia-300 border border-fuchsia-500/30 whitespace-nowrap shrink-0"
                   >Pick</button>
-                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="pdf-hide-control opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
                 </div>
               </div>
 
@@ -2582,7 +3402,7 @@
                 <span class="swatch-single-hex text-[10px] font-mono px-2 py-0.5 rounded bg-black/65 text-white border border-white/10">${escapeHtml(swatchHex)}</span>
               </button>
 
-              <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Add color or grading note..." class="text-xs text-neutral-400 leading-relaxed outline-none focus:text-neutral-200 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
+              <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Add color or grading note..." class="pdf-editor-hint text-xs text-neutral-400 leading-relaxed outline-none focus:text-neutral-200 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
             </article>
           `;
         } else if (card.type === 'doc') {
@@ -2596,7 +3416,7 @@
               ${renderResizeHandles()}
               <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between select-none">
                 <span class="text-xs font-bold uppercase tracking-wider text-sky-300 whitespace-nowrap">Document</span>
-                <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition">&times;</button>
+                <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="pdf-hide-control opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition">&times;</button>
               </div>
               <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-sky-300 rounded px-1 -mx-1 truncate">${escapeHtml(card.title)}</h3>
               ${renderAttachmentBlock(card)}
@@ -2619,7 +3439,7 @@
                 onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"
                 class="flex-1 outline-none ${item.done ? 'line-through text-neutral-500' : 'text-neutral-200'}"
               >${escapeHtml(item.text)}</span>
-              <button onclick="removeTodoItem('${card.id}', '${item.id}')" class="text-neutral-600 hover:text-red-400 text-xs">&times;</button>
+              <button onclick="removeTodoItem('${card.id}', '${item.id}')" class="pdf-hide-control text-neutral-600 hover:text-red-400 text-xs">&times;</button>
             </div>
           `).join('');
 
@@ -2634,8 +3454,8 @@
               <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none">
                 <span class="text-xs font-bold uppercase tracking-wider text-emerald-300 whitespace-nowrap shrink-0">To-Do List</span>
                 <div class="flex items-center gap-1.5 shrink-0">
-                  <button onclick="addTodoItem('${card.id}')" class="px-2.5 py-1 rounded text-[10px] leading-none bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 whitespace-nowrap shrink-0">+ Task</button>
-                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                  <button onclick="addTodoItem('${card.id}')" class="pdf-hide-control px-2.5 py-1 rounded text-[10px] leading-none bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25 whitespace-nowrap shrink-0">+ Task</button>
+                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="pdf-hide-control opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
                 </div>
               </div>
               <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-emerald-300 rounded px-1 -mx-1">${escapeHtml(card.title)}</h3>
@@ -2657,8 +3477,8 @@
                   <span class="text-xs font-bold uppercase tracking-wider text-amber-400 whitespace-nowrap shrink-0">Column</span>
                   <div class="flex items-center gap-1.5 shrink-0">
                     <span class="text-[10px] font-mono text-neutral-500">${(card.cards || []).length}</span>
-                    <button onclick="triggerCardUpload('${card.id}')" title="Attach reference image" class="px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
-                    <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                    <button onclick="triggerCardUpload('${card.id}')" title="Attach reference image" class="pdf-hide-file-btn px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
+                    <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="pdf-hide-control opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
                   </div>
                 </div>
                 <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-xl text-[#E5E5E5] leading-tight outline-none focus:text-amber-400 rounded px-1 -mx-1">${escapeHtml(card.title)}</h3>
@@ -2666,7 +3486,7 @@
                 <p contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'notes', this.textContent)" data-placeholder="Add lane notes, shot sequence, or reminders..." class="text-xs text-neutral-400 leading-relaxed outline-none focus:text-neutral-200 rounded px-1 -mx-1 empty:before:content-[attr(data-placeholder)] empty:before:text-neutral-600">${escapeHtml(card.notes || '')}</p>
                 <div class="space-y-2 pt-1">${renderColumnNestedItems(card)}</div>
               </div>
-              <div class="pt-2 border-t border-[#262626]/80 text-[10px] text-neutral-500 select-none">
+              <div class="pdf-editor-hint pt-2 border-t border-[#262626]/80 text-[10px] text-neutral-500 select-none">
                 Drag items here or between columns • Drag header to move
               </div>
             </article>
@@ -2683,8 +3503,8 @@
               <div class="drag-handle cursor-grab active:cursor-grabbing flex items-center justify-between gap-2 select-none">
                 <span class="text-xs font-bold uppercase tracking-wider text-[#60A5FA] whitespace-nowrap shrink-0">Production Note</span>
                 <div class="flex items-center gap-1.5 shrink-0">
-                  <button onclick="triggerCardUpload('${card.id}')" title="Attach reference image" class="px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
-                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
+                  <button onclick="triggerCardUpload('${card.id}')" title="Attach reference image" class="pdf-hide-file-btn px-2.5 py-1 rounded text-[10px] leading-none bg-[#0A0A0A] hover:bg-[#222222] text-neutral-300 border border-[#262626] whitespace-nowrap shrink-0">+ File</button>
+                  <button onclick="deleteCard('${card.id}')" title="Move to Bin" class="pdf-hide-control opacity-0 group-hover:opacity-100 text-xs text-neutral-500 hover:text-red-400 transition shrink-0">&times;</button>
                 </div>
               </div>
               <h3 data-focus-id="${card.id}" contenteditable="true" spellcheck="false" onblur="updateCardField('${card.id}', 'title', this.textContent)" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}" class="font-heading text-lg text-[#E5E5E5] leading-tight outline-none focus:text-[#60A5FA] rounded px-1 -mx-1">${escapeHtml(card.title)}</h3>
@@ -2696,6 +3516,8 @@
       });
 
       container.innerHTML = html;
+      applyCanvasLockState();
+      applyCanvasSelection();
       attachCornerResizeHandles();
       attachDragAndAlignmentGuides();
       attachNestedColumnDrag();
@@ -2716,18 +3538,287 @@
       return (board.cards || []).find(c => c.id === id) || null;
     }
 
+    function getCanvasContextModel(target) {
+      if (target?.type !== 'canvas' || target.boardId !== studioState.activeBoardId) return null;
+      if (target.kind !== 'nested') return getCanvasItemModel(target.kind, target.id);
+      const column = getCanvasItemModel('card', target.columnId);
+      return column?.cards?.find(item => item.id === target.id) || null;
+    }
+
+    function applyCanvasLockState() {
+      const container = document.getElementById('itemsContainer');
+      if (!container) return;
+      container.querySelectorAll('.canvas-item').forEach(element => {
+        const model = getCanvasItemModel(element.dataset.kind, element.dataset.id);
+        const locked = Boolean(model?.locked);
+        element.dataset.locked = String(locked);
+        if (locked) element.querySelectorAll('.resize-handle').forEach(handle => handle.remove());
+      });
+      container.querySelectorAll('.column-nested-item').forEach(element => {
+        const column = getCanvasItemModel('card', element.dataset.columnId);
+        const model = column?.cards?.find(item => item.id === element.dataset.nestedId);
+        element.dataset.locked = String(Boolean(model?.locked));
+      });
+    }
+
+    function toggleCanvasItemLock(target) {
+      if (isReadOnlyMode) return;
+      const model = getCanvasContextModel(target);
+      if (!model) return;
+      model.locked = !model.locked;
+      saveState();
+      renderStudio();
+      setStudioNotice(model.locked ? 'Item locked in place.' : 'Item unlocked.');
+    }
+
+    function setCanvasSelection(kind, id, metadata = {}) {
+      selectedCanvasItem = {
+        kind,
+        id,
+        boardId: studioState.activeBoardId,
+        ...metadata
+      };
+      applyCanvasSelection();
+    }
+
+    function clearCanvasSelection() {
+      selectedCanvasItem = null;
+      applyCanvasSelection();
+    }
+
+    function applyCanvasSelection() {
+      const container = document.getElementById('itemsContainer');
+      if (!container) return;
+      container.querySelectorAll('.is-selected').forEach(item => item.classList.remove('is-selected'));
+      if (!selectedCanvasItem || selectedCanvasItem.boardId !== studioState.activeBoardId) {
+        selectedCanvasItem = null;
+        return;
+      }
+      const selector = selectedCanvasItem.kind === 'nested'
+        ? '.column-nested-item'
+        : '.canvas-item';
+      const selected = Array.from(container.querySelectorAll(selector)).find(item =>
+        selectedCanvasItem.kind === 'nested'
+          ? item.dataset.columnId === selectedCanvasItem.columnId && item.dataset.nestedId === selectedCanvasItem.id
+          : item.dataset.kind === selectedCanvasItem.kind && item.dataset.id === selectedCanvasItem.id
+      );
+      if (selected) selected.classList.add('is-selected');
+      else selectedCanvasItem = null;
+    }
+
+    function deleteSelectedCanvasItem() {
+      if (isReadOnlyMode || !selectedCanvasItem || selectedCanvasItem.boardId !== studioState.activeBoardId) return false;
+      const { kind, id } = selectedCanvasItem;
+      if (kind === 'nested') {
+        const column = getCanvasItemModel('card', selectedCanvasItem.columnId);
+        if (column?.type !== 'column' || !column.cards?.some(item => item.id === id)) return false;
+        deleteColumnItem(selectedCanvasItem.columnId, id);
+        return true;
+      }
+      if (!getCanvasItemModel(kind, id)) {
+        selectedCanvasItem = null;
+        return false;
+      }
+      if (kind === 'subboard') deleteSubBoard(id);
+      else deleteCard(id);
+      return true;
+    }
+
+    function closeCanvasContextMenu() {
+      const menu = document.getElementById('canvasContextMenu');
+      if (menu) menu.classList.add('hidden');
+      canvasContextTarget = null;
+      canvasContextSpot = null;
+    }
+
+    function contextMenuButton(action, label, shortcut = '', disabled = false, danger = false) {
+      return `
+        <button
+          type="button"
+          role="menuitem"
+          data-action="${action}"
+          ${disabled ? 'disabled' : ''}
+          class="w-full flex items-center justify-between gap-3 text-left px-2.5 py-2 rounded-lg text-xs ${
+            danger ? 'text-red-300 hover:bg-red-500/10' : 'text-neutral-200 hover:bg-white/5'
+          } disabled:text-neutral-600 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+        >
+          <span>${label}</span>
+          ${shortcut ? `<span class="text-[10px] text-neutral-500">${shortcut}</span>` : ''}
+        </button>
+      `;
+    }
+
+    function openCanvasContextMenu(clientX, clientY, target = null, spot = null) {
+      const menu = document.getElementById('canvasContextMenu');
+      if (!menu) return;
+      canvasContextTarget = target;
+      canvasContextSpot = spot;
+
+      const historyActions = `
+        ${contextMenuButton('undo', 'Undo', 'Ctrl/Cmd+Z', isReadOnlyMode || undoHistory.length === 0)}
+        ${contextMenuButton('redo', 'Redo', 'Ctrl/Cmd+Shift+Z', isReadOnlyMode || redoHistory.length === 0)}
+      `;
+      let targetActions = '';
+      let addActions = '';
+
+      if (target?.type === 'project') {
+        targetActions = `
+          ${contextMenuButton('open-project', 'Open project')}
+          ${contextMenuButton('delete-project', 'Delete project…', '', isReadOnlyMode || getRootBoards().length <= 1, true)}
+        `;
+      } else if (target?.type === 'canvas') {
+        const locked = Boolean(getCanvasContextModel(target)?.locked);
+        const lockAction = contextMenuButton('toggle-lock', locked ? 'Unlock in place' : 'Lock in place', '', isReadOnlyMode);
+        targetActions = target.kind === 'subboard'
+          ? `${lockAction}${contextMenuButton('open-board', 'Open board')}${contextMenuButton('move-to-bin', 'Move board to Bin', 'Delete', isReadOnlyMode, true)}`
+          : `${lockAction}${contextMenuButton('move-to-bin', target.kind === 'nested' ? 'Move item to Bin' : 'Move card to Bin', 'Delete', isReadOnlyMode, true)}`;
+      } else {
+        const addTypes = [
+          ['shot', 'Add Shot'],
+          ['mood', 'Add Mood'],
+          ['image', 'Add Image'],
+          ['swatches', 'Add Swatches'],
+          ['note', 'Add Note'],
+          ['doc', 'Add Document'],
+          ['todo', 'Add To-Do'],
+          ['column', 'Add Column'],
+          ['subboard', 'Add Board']
+        ];
+        addActions = addTypes.map(([type, label]) =>
+          contextMenuButton(`add-${type}`, label, '', isReadOnlyMode)
+        ).join('');
+      }
+
+      const heading = target?.type === 'project'
+        ? 'PROJECT BOARD'
+        : target?.type === 'canvas'
+          ? (target.kind === 'subboard' ? 'SUB-BOARD' : target.kind === 'nested' ? 'COLUMN ITEM' : 'CANVAS ITEM')
+          : 'CANVAS';
+      menu.innerHTML = `
+        <div class="px-2.5 pt-1.5 pb-2 text-[9px] font-bold tracking-[0.18em] text-neutral-500">${heading}</div>
+        ${historyActions}
+        ${targetActions ? `<div class="my-1 border-t border-[#303030]"></div>${targetActions}` : ''}
+        ${addActions ? `<div class="my-1 border-t border-[#303030]"></div>${addActions}` : ''}
+        <div class="mt-1 border-t border-[#303030] px-2.5 pt-2 pb-1 text-[9px] text-neutral-500">Delete • Ctrl/Cmd+Z to undo</div>
+      `;
+      menu.classList.remove('hidden');
+      menu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - menu.offsetWidth - 8))}px`;
+      menu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - menu.offsetHeight - 8))}px`;
+      menu.querySelector('[data-action]:not(:disabled)')?.focus();
+    }
+
+    function getCanvasSpotAt(clientX, clientY) {
+      const surface = document.getElementById('spatialSurface');
+      const rect = surface.getBoundingClientRect();
+      return {
+        x: snapToGrid(Math.max(24, (clientX - rect.left) / currentZoom)),
+        y: snapToGrid(Math.max(24, (clientY - rect.top) / currentZoom))
+      };
+    }
+
+    function runCanvasContextAction(action) {
+      const target = canvasContextTarget;
+      const spot = canvasContextSpot;
+      closeCanvasContextMenu();
+
+      if (action === 'undo') return undoStudioChange();
+      if (action === 'redo') return redoStudioChange();
+      if (action === 'open-project' || action === 'open-board') {
+        if (target?.id) selectBoard(target.id);
+        return;
+      }
+      if (action === 'delete-project') {
+        if (!isReadOnlyMode && target?.id) deleteProjectBoard(target.id);
+        return;
+      }
+      if (action === 'toggle-lock') {
+        toggleCanvasItemLock(target);
+        return;
+      }
+      if (action === 'move-to-bin') {
+        if (isReadOnlyMode || target?.type !== 'canvas' || target.boardId !== studioState.activeBoardId) return;
+        setCanvasSelection(target.kind, target.id, { columnId: target.columnId });
+        deleteSelectedCanvasItem();
+        return;
+      }
+      if (action.startsWith('add-') && !isReadOnlyMode && spot) {
+        createItemAtSpot(action.slice(4), spot);
+      }
+    }
+
+    function initCanvasContextInteractions() {
+      const viewport = document.getElementById('canvasViewport');
+      const projectList = document.getElementById('projectBoardsList');
+      const menu = document.getElementById('canvasContextMenu');
+
+      viewport.addEventListener('pointerdown', event => {
+        if (event.button !== 0 || event.target.closest('#canvasContextMenu')) return;
+        const nested = event.target.closest('.column-nested-item');
+        if (nested) {
+          setCanvasSelection('nested', nested.dataset.nestedId, { columnId: nested.dataset.columnId });
+          return;
+        }
+        const item = event.target.closest('.canvas-item');
+        if (item) setCanvasSelection(item.dataset.kind, item.dataset.id);
+        else clearCanvasSelection();
+      }, true);
+
+      viewport.addEventListener('contextmenu', event => {
+        if (event.target.closest('input, textarea, select, a, [contenteditable]')) return;
+        const nested = event.target.closest('.column-nested-item');
+        const item = nested?.closest('.canvas-item') || event.target.closest('.canvas-item');
+        event.preventDefault();
+        if (item) {
+          const target = {
+            type: 'canvas',
+            kind: nested ? 'nested' : item.dataset.kind,
+            id: nested ? nested.dataset.nestedId : item.dataset.id,
+            columnId: nested?.dataset.columnId,
+            boardId: studioState.activeBoardId
+          };
+          setCanvasSelection(target.kind, target.id, { columnId: target.columnId });
+          openCanvasContextMenu(event.clientX, event.clientY, target);
+        } else {
+          clearCanvasSelection();
+          openCanvasContextMenu(event.clientX, event.clientY, null, getCanvasSpotAt(event.clientX, event.clientY));
+        }
+      });
+
+      projectList.addEventListener('contextmenu', event => {
+        const boardRow = event.target.closest('[data-project-board-id]');
+        if (!boardRow) return;
+        event.preventDefault();
+        clearCanvasSelection();
+        openCanvasContextMenu(event.clientX, event.clientY, {
+          type: 'project',
+          id: boardRow.dataset.projectBoardId
+        });
+      });
+
+      menu.addEventListener('click', event => {
+        const button = event.target.closest('[data-action]');
+        if (button && !button.disabled) runCanvasContextAction(button.dataset.action);
+      });
+
+      document.addEventListener('pointerdown', event => {
+        if (!menu.contains(event.target)) closeCanvasContextMenu();
+      });
+      document.addEventListener('scroll', closeCanvasContextMenu, true);
+      window.addEventListener('resize', closeCanvasContextMenu);
+    }
+
     function attachCornerResizeHandles() {
       if (isReadOnlyMode) return;
       const container = document.getElementById('itemsContainer');
 
       container.querySelectorAll('.resize-handle').forEach(handle => {
         handle.addEventListener('dblclick', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
           const cardEl = handle.closest('.canvas-item');
           if (!cardEl) return;
           const model = getCanvasItemModel(cardEl.dataset.kind, cardEl.dataset.id);
-          if (!model) return;
+          if (!model || model.locked) return;
+          e.preventDefault();
+          e.stopPropagation();
           delete model.width;
           delete model.height;
           saveState();
@@ -2735,16 +3826,15 @@
         });
 
         handle.addEventListener('pointerdown', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-
           const cardEl = handle.closest('.canvas-item');
           if (!cardEl) return;
 
           const kind = cardEl.dataset.kind;
           const id = cardEl.dataset.id;
           const model = getCanvasItemModel(kind, id);
-          if (!model) return;
+          if (!model || model.locked) return;
+          e.preventDefault();
+          e.stopPropagation();
 
           const dir = handle.dataset.dir;
           const startX = e.clientX;
@@ -2840,13 +3930,16 @@
       container.querySelectorAll('.nested-drag-handle').forEach(handle => {
         handle.addEventListener('pointerdown', (e) => {
           if (e.target.closest('button')) return;
-          e.preventDefault();
-          e.stopPropagation();
 
           const nestedEl = handle.closest('.column-nested-item');
           if (!nestedEl) return;
           const sourceColumnId = nestedEl.dataset.columnId;
           const nestedId = nestedEl.dataset.nestedId;
+          const sourceColumn = getCanvasItemModel('card', sourceColumnId);
+          const nestedItem = sourceColumn?.cards?.find(item => item.id === nestedId);
+          if (!nestedItem || nestedItem.locked) return;
+          e.preventDefault();
+          e.stopPropagation();
 
           const startX = e.clientX;
           const startY = e.clientY;
@@ -2918,8 +4011,8 @@
               transferNestedItemBetweenColumns(sourceColumnId, nestedId, targetColId);
             } else if (!targetColId && Math.hypot(ev.clientX - startX, ev.clientY - startY) >= 5) {
               const sRect = surface.getBoundingClientRect();
-              const dropX = Math.max(16, Math.round((ev.clientX - sRect.left) / currentZoom - 120));
-              const dropY = Math.max(12, Math.round((ev.clientY - sRect.top) / currentZoom - 24));
+              const dropX = snapToGrid((ev.clientX - sRect.left) / currentZoom - 120);
+              const dropY = snapToGrid((ev.clientY - sRect.top) / currentZoom - 24);
               popOutColumnItem(sourceColumnId, nestedId, { x: dropX, y: dropY });
             }
           }
@@ -3044,18 +4137,18 @@
 
       container.querySelectorAll('.canvas-item').forEach(el => {
         const isStandaloneImage = el.dataset.kind === 'card' && el.dataset.cardType === 'image';
-        const handle = el.querySelector('.drag-handle') || (isStandaloneImage ? el.querySelector('img') : null);
-        if (!handle) return;
+        const handle = el;
 
         handle.addEventListener('pointerdown', (e) => {
-          if (e.target.closest('button')) return;
-          if (isStandaloneImage && e.target.closest('[contenteditable="true"]')) return;
+          if (e.target.closest('button, input, textarea, select, a, [contenteditable="true"], .column-nested-item, .resize-handle')) return;
+          const draggedKind = el.dataset.kind;
+          const draggedId = el.dataset.id;
+          const draggedModel = getCanvasItemModel(draggedKind, draggedId);
+          if (!draggedModel || draggedModel.locked) return;
           e.preventDefault();
           closeColorPickerPopover();
 
-          const draggedKind = el.dataset.kind;
           const draggedCardType = el.dataset.cardType || '';
-          const draggedId = el.dataset.id;
           const isColumnSelf = draggedCardType === 'column';
 
           const startX = e.clientX;
@@ -3187,8 +4280,15 @@
               bestY = { delta: eqY.delta, snappedTop: eqY.snappedTop, guideY: null };
             }
 
-            const finalX = bestX ? Math.max(0, Math.round(bestX.snappedLeft)) : Math.round(rawX);
-            const finalY = bestY ? Math.max(0, Math.round(bestY.snappedTop)) : Math.round(rawY);
+            const gridX = Math.round(rawX / GRID_SIZE) * GRID_SIZE;
+            const gridY = Math.round(rawY / GRID_SIZE) * GRID_SIZE;
+
+            const finalX = bestX
+              ? Math.max(0, Math.round(bestX.snappedLeft))
+              : (Math.abs(rawX - gridX) <= GRID_SNAP_THRESHOLD ? Math.max(0, gridX) : Math.max(0, gridX));
+            const finalY = bestY
+              ? Math.max(0, Math.round(bestY.snappedTop))
+              : (Math.abs(rawY - gridY) <= GRID_SNAP_THRESHOLD ? Math.max(0, gridY) : Math.max(0, gridY));
 
             el.style.left = `${finalX}px`;
             el.style.top = `${finalY}px`;
@@ -3297,25 +4397,118 @@
       if (!board) return;
       let col = 0;
       let row = 0;
-      const colWidth = 420;
-      const rowHeight = 440;
+      const colWidth = 432;
+      const rowHeight = 432;
 
       (board.subBoards || []).forEach(ref => {
-        ref.x = 24 + col * colWidth;
-        ref.y = 16 + row * rowHeight;
+        ref.x = snapToGrid(24 + col * colWidth);
+        ref.y = snapToGrid(24 + row * rowHeight);
         col++;
         if (col >= 3) { col = 0; row++; }
       });
 
       (board.cards || []).forEach(card => {
-        card.x = 24 + col * colWidth;
-        card.y = 16 + row * rowHeight;
+        card.x = snapToGrid(24 + col * colWidth);
+        card.y = snapToGrid(24 + row * rowHeight);
         col++;
         if (col >= 3) { col = 0; row++; }
       });
 
       saveState();
       renderStudio();
+    }
+
+    function isDefaultCardTitle(card, title, attachmentName) {
+      if (!title || title === 'Untitled') return true;
+      switch (card.type) {
+        case 'shot':
+          return /^Shot \d+ \u2022 Untitled Frame$/.test(title);
+        case 'mood':
+          return title === 'New Mood Reference';
+        case 'swatches':
+          return /^Swatch \d+$/.test(title);
+        case 'todo':
+          return title === 'Production To-Do List';
+        case 'column':
+          return title === 'New Column';
+        case 'image': {
+          const fileName = attachmentName || card.attachmentName || '';
+          const imageTitle = fileName.replace(/\.[^/.]+$/, '') || 'Image';
+          return title === imageTitle;
+        }
+        case 'doc':
+          return title === (attachmentName || card.attachmentName || '');
+        default:
+          return title === 'Production Note';
+      }
+    }
+
+    function isCardEffectivelyEmpty(card, fallbackAttachmentName = '') {
+      if (!card) return true;
+      if (card.attachmentData || card.attachmentPath || card.attachmentName) return false;
+
+      const defaultNotes = {
+        shot: 'Click to add shot description, action, or framing cues...',
+        mood: 'Drag an image here or upload one to extract palette swatches.',
+        swatches: 'Click swatch to copy hex, or click Pick for RGB / HSL / HEX picker.',
+        column: 'Drag any card or sub-board into this column to group it here.',
+        doc: 'Attached production document or PDF.',
+        note: 'Click to write a call-sheet reminder or cue...'
+      };
+      const title = String(card.title || '').trim();
+      const notes = String(card.notes || '').trim();
+      const meaningfulText = (value, defaults = []) =>
+        Boolean(value) && value !== 'Untitled' && !defaults.includes(value);
+
+      if (meaningfulText(title) && !isDefaultCardTitle(card, title, fallbackAttachmentName)) return false;
+      if (meaningfulText(notes, [defaultNotes[card.type]])) return false;
+
+      if (card.type === 'shot') {
+        const defaults = { shotSize: 'Medium Shot', lens: '35mm Prime', movement: 'Static' };
+        if (Object.entries(defaults).some(([field, value]) => {
+          const fieldValue = String(card[field] || '').trim();
+          return fieldValue && fieldValue !== value;
+        })) return false;
+      }
+
+      if (card.type === 'mood') {
+        const defaultColors = ['#0A0A0A', '#10B981', '#34D399', '#9333EA', '#E5E5E5'];
+        const colors = Array.isArray(card.colors) ? card.colors.map(normalizeHex) : [];
+        if (colors.length && JSON.stringify(colors) !== JSON.stringify(defaultColors)) return false;
+      }
+
+      if (card.type === 'swatches' && (card.color || card.colors?.length)) return false;
+
+      if (card.type === 'todo' && (card.items || []).some(item => {
+        const itemText = String(item.text || '').trim();
+        return item.done || meaningfulText(itemText, ['First task item', 'New task', 'Untitled task']);
+      })) return false;
+
+      if (card.type === 'column' && (card.cards || []).length) return false;
+
+      return true;
+    }
+
+    function moveCardToBin(board, target, restoreData = target) {
+      const cardIndex = board.cards.findIndex(card => card.id === target.id);
+      if (cardIndex === -1) return false;
+      board.bin = board.bin || [];
+      board.bin.unshift({
+        binId: 'bin_' + Date.now(),
+        kind: 'card',
+        deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        data: snapshotCardForBin(restoreData)
+      });
+      board.cards.splice(cardIndex, 1);
+      return true;
+    }
+
+    function snapshotCardForBin(card) {
+      return JSON.parse(JSON.stringify(card));
+    }
+
+    function moveEmptyCardToBin(board, card, snapshot = card) {
+      return isCardEffectivelyEmpty(card) && moveCardToBin(board, card, snapshot);
     }
 
     // Bin Functions
@@ -3325,16 +4518,7 @@
       const board = studioState.boards[studioState.activeBoardId];
       if (!board) return;
       const target = board.cards.find(c => c.id === cardId);
-      if (!target) return;
-
-      board.bin = board.bin || [];
-      board.bin.unshift({
-        binId: 'bin_' + Date.now(),
-        kind: 'card',
-        deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        data: { ...target, attachmentData: '' }
-      });
-      board.cards = board.cards.filter(c => c.id !== cardId);
+      if (!target || !moveCardToBin(board, target)) return;
       saveState();
       renderStudio();
     }
@@ -3346,15 +4530,31 @@
       if (!board || !sub) return;
 
       const ref = (board.subBoards || []).find(s => s.id === subId);
+      const removedBoards = {};
+      function collectSubBoardTree(id) {
+        const childBoard = studioState.boards[id];
+        if (!childBoard || removedBoards[id]) return;
+        removedBoards[id] = childBoard;
+        (childBoard.subBoards || []).forEach(child => collectSubBoardTree(child.id));
+      }
+      collectSubBoardTree(subId);
       board.bin = board.bin || [];
       board.bin.unshift({
         binId: 'bin_' + Date.now(),
         kind: 'subboard',
         deletedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        data: { id: subId, title: sub.title, x: ref?.x || 24, y: ref?.y || 16 }
+        data: {
+          id: subId,
+          title: sub.title,
+          x: ref?.x ?? 24,
+          y: ref?.y ?? 24,
+          width: ref?.width,
+          height: ref?.height,
+          boards: JSON.parse(JSON.stringify(removedBoards))
+        }
       });
       board.subBoards = (board.subBoards || []).filter(s => s.id !== subId);
-      delete studioState.boards[subId];
+      Object.keys(removedBoards).forEach(id => delete studioState.boards[id]);
       saveState();
       renderStudio();
     }
@@ -3393,20 +4593,28 @@
       const [entry] = board.bin.splice(idx, 1);
 
       if (entry.kind === 'subboard') {
-        const restoredId = 'board_' + Date.now();
-        studioState.boards[restoredId] = {
-          id: restoredId,
-          parentId: board.id,
-          title: entry.data.title || 'Restored Sub-Board',
-          description: '',
-          subBoards: [],
-          bin: [],
-          cards: []
-        };
+        const restoredId = entry.data.id;
+        if (entry.data.boards?.[restoredId]) {
+          Object.assign(studioState.boards, JSON.parse(JSON.stringify(entry.data.boards)));
+          studioState.boards[restoredId].parentId = board.id;
+        } else {
+          const legacyId = (crypto?.randomUUID ? crypto.randomUUID() : 'board_' + Date.now());
+          studioState.boards[legacyId] = {
+            id: legacyId,
+            parentId: board.id,
+            title: entry.data.title || 'Restored Sub-Board',
+            description: '',
+            subBoards: [],
+            bin: [],
+            cards: []
+          };
+          entry.data.id = legacyId;
+        }
+        board.subBoards = board.subBoards || [];
         board.subBoards.push({
-          id: restoredId,
-          x: entry.data.x || 24,
-          y: entry.data.y || 16,
+          id: entry.data.id,
+          x: snapToGrid(entry.data.x ?? 24),
+          y: snapToGrid(entry.data.y ?? 24),
           width: entry.data.width,
           height: entry.data.height
         });
@@ -3414,8 +4622,8 @@
         board.cards.push({
           ...entry.data,
           id: 'card_' + Date.now(),
-          x: entry.data.x || 24,
-          y: entry.data.y || 16
+          x: snapToGrid(entry.data.x || 24),
+          y: snapToGrid(entry.data.y || 24)
         });
       }
 
@@ -3427,22 +4635,27 @@
     function deleteBinEntryPermanently(binId) {
       const board = studioState.boards[studioState.activeBoardId];
       if (!board || !board.bin) return;
+      const entry = board.bin.find(item => item.binId === binId);
+      const attachmentPaths = [...collectAttachmentPaths(entry)];
       board.bin = board.bin.filter(b => b.binId !== binId);
       saveState();
       renderStudio();
       openBinModal();
+      queueAttachmentCleanup(attachmentPaths);
     }
 
     function emptyBoardBin() {
       const board = studioState.boards[studioState.activeBoardId];
       if (!board) return;
+      const attachmentPaths = [...collectAttachmentPaths(board.bin || [])];
       board.bin = [];
       saveState();
       renderStudio();
       openBinModal();
+      queueAttachmentCleanup(attachmentPaths);
     }
 
-    // Share Read-Only Link & Agile Single-Page PDF Export
+    // Share Read-Only Link & Agile Single-Page PDF Preview + Export
     function openShareModal() {
       const board = studioState.boards[studioState.activeBoardId];
       if (!board) return;
@@ -3477,16 +4690,69 @@
       btn.textContent = destMode === 'picker' ? 'Choose Folder & Export' : 'Download PDF';
     }
 
+    function applyPdfPreviewScale() {
+      const img = document.getElementById('pdfPreviewImage');
+      const wrapper = document.getElementById('pdfPreviewWrapper');
+      const stage = document.getElementById('pdfPreviewStage');
+      const select = document.getElementById('pdfPreviewScaleSelect');
+      if (!img || !cachedPdfRender) return;
+
+      const scaleMode = select?.value || 'fit';
+      if (scaleMode === 'fit') {
+        img.style.width = '100%';
+        img.style.maxWidth = '100%';
+        wrapper.style.width = '100%';
+      } else {
+        const pct = Number(scaleMode) || 100;
+        const targetW = Math.round((cachedPdfRender.cropW * pct) / 100);
+        img.style.width = `${targetW}px`;
+        img.style.maxWidth = 'none';
+        wrapper.style.width = `${Math.max(targetW, stage.clientWidth - 32)}px`;
+      }
+    }
+
+    function getCurrentPdfOptionsSignature() {
+      return JSON.stringify({
+        boardId: studioState.activeBoardId,
+        framing: document.getElementById('pdfFramingMode').value,
+        theme: document.getElementById('pdfThemeMode').value,
+        margin: document.getElementById('pdfMarginInput').value
+      });
+    }
+
+    function invalidatePdfPreview() {
+      cachedPdfRender = null;
+      const wrapper = document.getElementById('pdfPreviewWrapper');
+      const img = document.getElementById('pdfPreviewImage');
+      const placeholder = document.getElementById('pdfPreviewPlaceholder');
+      if (img) img.src = '';
+      if (wrapper) wrapper.classList.add('hidden');
+      if (placeholder) {
+        placeholder.innerHTML = '<p class="text-xs text-neutral-500 text-center">Settings changed — click <strong class="text-neutral-300">Preview PDF</strong> to refresh the layout preview.</p>';
+        placeholder.classList.remove('hidden');
+      }
+    }
+
     function exportBoardPdf() {
       const board = studioState.boards[studioState.activeBoardId];
       const itemCount = document.querySelectorAll('#itemsContainer .canvas-item').length;
       const defaultSlug = slugifyFilename(board?.title || 'boardie-canvas');
       const destSelect = document.getElementById('pdfSaveDestination');
 
+      cachedPdfRender = null;
       document.getElementById('pdfBoardName').textContent = board?.title || 'Untitled Board';
       document.getElementById('pdfItemsSummary').textContent = `${itemCount} canvas item${itemCount === 1 ? '' : 's'}`;
       document.getElementById('pdfFileNameInput').value = defaultSlug;
+      document.getElementById('pdfPreviewScaleSelect').value = 'fit';
       document.getElementById('exportPdfStatus').textContent = '';
+
+      const previewWrapper = document.getElementById('pdfPreviewWrapper');
+      const previewImg = document.getElementById('pdfPreviewImage');
+      const previewPlaceholder = document.getElementById('pdfPreviewPlaceholder');
+      previewImg.src = '';
+      previewWrapper.classList.add('hidden');
+      previewPlaceholder.innerHTML = '<p class="text-xs text-neutral-500 text-center">Click <strong class="text-neutral-300">Preview PDF</strong> to inspect the single-page layout before downloading.</p>';
+      previewPlaceholder.classList.remove('hidden');
 
       if (typeof window.showSaveFilePicker !== 'function') {
         destSelect.value = 'downloads';
@@ -3494,6 +4760,114 @@
 
       updateExportButtonLabel();
       document.getElementById('exportPdfModal').classList.remove('hidden');
+    }
+
+    async function captureSinglePageCanvas() {
+      const surface = document.getElementById('spatialSurface');
+      const itemsContainer = document.getElementById('itemsContainer');
+      const guideLayer = document.getElementById('guideLayer');
+
+      if (!window.html2canvas) {
+        throw new Error('html2canvas is not available');
+      }
+
+      const framingMode = document.getElementById('pdfFramingMode').value;
+      const themeMode = document.getElementById('pdfThemeMode').value;
+      const pad = Math.max(48, Number(document.getElementById('pdfMarginInput').value) || 96);
+
+      const prevZoomPercent = Math.round(currentZoom * 100);
+      const prevTransform = surface.style.transform;
+      const prevBg = surface.style.backgroundColor;
+
+      guideLayer.classList.add('hidden');
+      closeColorPickerPopover();
+      document.body.classList.add('pdf-capturing', 'pdf-export-clean');
+
+      try {
+        surface.style.transform = 'scale(1)';
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+        const itemEls = Array.from(itemsContainer.querySelectorAll('.canvas-item'));
+
+        let cropX = 0;
+        let cropY = 0;
+        let cropW = Math.max(800, surface.scrollWidth);
+        let cropH = Math.max(600, surface.scrollHeight);
+
+        if (framingMode === 'tight' && itemEls.length > 0) {
+          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+          itemEls.forEach(el => {
+            const left = el.offsetLeft;
+            const top = el.offsetTop;
+            const width = el.offsetWidth;
+            const height = el.offsetHeight;
+            minX = Math.min(minX, left);
+            minY = Math.min(minY, top);
+            maxX = Math.max(maxX, left + width);
+            maxY = Math.max(maxY, top + height);
+          });
+          cropX = Math.max(0, Math.floor(minX - pad));
+          cropY = Math.max(0, Math.floor(minY - pad));
+          cropW = Math.max(360, Math.ceil(maxX - minX + pad * 2));
+          cropH = Math.max(260, Math.ceil(maxY - minY + pad * 2));
+        }
+
+        if (themeMode === 'light') {
+          surface.style.backgroundColor = '#ffffff';
+        }
+
+        const canvas = await window.html2canvas(surface, {
+          backgroundColor: themeMode === 'light' ? '#ffffff' : '#0A0A0A',
+          scale: 2,
+          useCORS: true,
+          x: cropX,
+          y: cropY,
+          width: cropW,
+          height: cropH,
+          ignoreElements: (el) => el.classList?.contains('resize-handle')
+        });
+
+        return {
+          imgData: canvas.toDataURL('image/png', 1.0),
+          cropW,
+          cropH
+        };
+      } finally {
+        document.body.classList.remove('pdf-capturing', 'pdf-export-clean');
+        surface.style.transform = prevTransform;
+        surface.style.backgroundColor = prevBg;
+        setCanvasZoom(prevZoomPercent);
+      }
+    }
+
+    async function renderPdfPreview() {
+      const previewBtn = document.getElementById('previewPdfBtn');
+      const previewWrapper = document.getElementById('pdfPreviewWrapper');
+      const previewImg = document.getElementById('pdfPreviewImage');
+      const previewPlaceholder = document.getElementById('pdfPreviewPlaceholder');
+      const statusEl = document.getElementById('exportPdfStatus');
+
+      previewBtn.disabled = true;
+      previewBtn.textContent = 'Rendering...';
+      statusEl.textContent = 'Generating clean PDF preview...';
+
+      try {
+        const signature = getCurrentPdfOptionsSignature();
+        const rendered = await captureSinglePageCanvas();
+        cachedPdfRender = { signature, ...rendered };
+
+        previewImg.src = rendered.imgData;
+        previewWrapper.classList.remove('hidden');
+        previewPlaceholder.classList.add('hidden');
+        applyPdfPreviewScale();
+        statusEl.textContent = `Preview ready (${rendered.cropW} × ${rendered.cropH}px single page).`;
+      } catch (err) {
+        console.error('PDF preview error:', err);
+        statusEl.textContent = 'Could not generate preview. Try again.';
+      } finally {
+        previewBtn.disabled = false;
+        previewBtn.textContent = 'Preview PDF';
+      }
     }
 
     async function savePdfToChosenDestination(pdf, filename, destinationMode) {
@@ -3523,9 +4897,6 @@
     async function generateAgileSinglePagePdf() {
       const statusEl = document.getElementById('exportPdfStatus');
       const btn = document.getElementById('confirmExportPdfBtn');
-      const surface = document.getElementById('spatialSurface');
-      const itemsContainer = document.getElementById('itemsContainer');
-      const guideLayer = document.getElementById('guideLayer');
       const board = studioState.boards[studioState.activeBoardId];
 
       if (!window.html2canvas || !window.jspdf?.jsPDF) {
@@ -3533,71 +4904,23 @@
         return;
       }
 
-      const framingMode = document.getElementById('pdfFramingMode').value;
-      const themeMode = document.getElementById('pdfThemeMode').value;
-      const pad = Math.max(48, Number(document.getElementById('pdfMarginInput').value) || 96);
       const destinationMode = document.getElementById('pdfSaveDestination').value;
       const rawName = document.getElementById('pdfFileNameInput').value.trim();
       const finalFileName = `${slugifyFilename(rawName || board?.title || 'boardie-canvas')}.pdf`;
 
-      const prevZoomPercent = Math.round(currentZoom * 100);
-      const prevTransform = surface.style.transform;
-      const prevBg = surface.style.backgroundColor;
-
       btn.disabled = true;
       btn.textContent = 'Rendering...';
-      statusEl.textContent = 'Preparing single-page canvas layout...';
-      guideLayer.classList.add('hidden');
-      closeColorPickerPopover();
-      document.body.classList.add('pdf-capturing');
+      statusEl.textContent = 'Preparing single-page PDF...';
 
       try {
-        surface.style.transform = 'scale(1)';
-        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-        const surfaceRect = surface.getBoundingClientRect();
-        const itemEls = Array.from(itemsContainer.querySelectorAll('.canvas-item'));
-
-        let cropX = 0;
-        let cropY = 0;
-        let cropW = Math.max(800, surface.scrollWidth);
-        let cropH = Math.max(600, surface.scrollHeight);
-
-        if (framingMode === 'tight' && itemEls.length > 0) {
-          let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-          itemEls.forEach(el => {
-            const r = el.getBoundingClientRect();
-            const left = r.left - surfaceRect.left;
-            const top = r.top - surfaceRect.top;
-            minX = Math.min(minX, left);
-            minY = Math.min(minY, top);
-            maxX = Math.max(maxX, left + r.width);
-            maxY = Math.max(maxY, top + r.height);
-          });
-          cropX = Math.max(0, Math.floor(minX - pad));
-          cropY = Math.max(0, Math.floor(minY - pad));
-          cropW = Math.max(360, Math.ceil(maxX - minX + pad * 2));
-          cropH = Math.max(260, Math.ceil(maxY - minY + pad * 2));
-        }
-
-        if (themeMode === 'light') {
-          surface.style.backgroundColor = '#ffffff';
-        }
-
-        const canvas = await window.html2canvas(surface, {
-          backgroundColor: themeMode === 'light' ? '#ffffff' : '#0A0A0A',
-          scale: 2,
-          useCORS: true,
-          x: cropX,
-          y: cropY,
-          width: cropW,
-          height: cropH,
-          ignoreElements: (el) => el.classList?.contains('resize-handle')
-        });
+        const currentSignature = getCurrentPdfOptionsSignature();
+        const rendered = (cachedPdfRender && cachedPdfRender.signature === currentSignature)
+          ? cachedPdfRender
+          : await captureSinglePageCanvas();
 
         const pxToPt = (px) => (px * 72) / 96;
-        const pageWidthPt = Math.max(360, pxToPt(cropW));
-        const pageHeightPt = Math.max(240, pxToPt(cropH));
+        const pageWidthPt = Math.max(360, pxToPt(rendered.cropW));
+        const pageHeightPt = Math.max(240, pxToPt(rendered.cropH));
 
         const { jsPDF } = window.jspdf;
         const pdf = new jsPDF({
@@ -3606,8 +4929,7 @@
           format: [pageWidthPt, pageHeightPt]
         });
 
-        const imgData = canvas.toDataURL('image/png', 1.0);
-        pdf.addImage(imgData, 'PNG', 0, 0, pageWidthPt, pageHeightPt);
+        pdf.addImage(rendered.imgData, 'PNG', 0, 0, pageWidthPt, pageHeightPt);
 
         const savedMessage = await savePdfToChosenDestination(pdf, finalFileName, destinationMode);
         statusEl.textContent = savedMessage;
@@ -3620,10 +4942,6 @@
           statusEl.textContent = 'Could not generate PDF. Try Chrome Downloads or fewer large images.';
         }
       } finally {
-        document.body.classList.remove('pdf-capturing');
-        surface.style.transform = prevTransform;
-        surface.style.backgroundColor = prevBg;
-        setCanvasZoom(prevZoomPercent);
         btn.disabled = false;
         updateExportButtonLabel();
       }
@@ -3637,6 +4955,7 @@
       document.getElementById('currentPlanDetail').textContent = PLAN_INFO[planKey].detail;
       document.getElementById('accNameInput').value = user.name;
       document.getElementById('accEmailInput').value = user.email;
+      document.getElementById('accEmailInput').readOnly = Boolean(currentAuthUser);
       document.getElementById('billingMethodInput').value = user.billingMethod;
       document.getElementById('billingCycleInput').value = user.billingCycle;
       document.getElementById('billingAddressInput').value = user.billingAddress;
@@ -3644,19 +4963,49 @@
       document.getElementById('accountModal').classList.remove('hidden');
     }
 
-    function saveAccountSettings(event) {
+    async function saveAccountSettings(event) {
       event.preventDefault();
       const current = getUserProfile();
+      const nextName = document.getElementById('accNameInput').value.trim() || 'Creator';
+      const nextEmail = currentAuthUser
+        ? (currentAuthUser.email || current.email)
+        : (document.getElementById('accEmailInput').value.trim() || current.email);
       const updated = {
         ...current,
-        name: document.getElementById('accNameInput').value.trim() || 'Creator',
-        email: document.getElementById('accEmailInput').value.trim() || current.email,
+        name: nextName,
+        email: nextEmail,
         billingMethod: document.getElementById('billingMethodInput').value,
         billingCycle: document.getElementById('billingCycleInput').value,
         billingAddress: document.getElementById('billingAddressInput').value.trim()
       };
-      saveUserProfile(updated);
-      document.getElementById('accountSaveNotice').textContent = 'Account & billing details saved.';
+
+      if (currentAuthUser) {
+        try {
+          const { error } = await sb.from('profiles').upsert({
+            id: currentAuthUser.id,
+            full_name: nextName,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'id' });
+          if (error) throw error;
+        } catch (err) {
+          console.error('Could not update profile in Supabase:', err);
+          const localSaved = saveUserProfile(updated);
+          const code = err?.code ? ` (${err.code})` : '';
+          const notice = document.getElementById('accountSaveNotice');
+          notice.className = 'text-xs text-amber-400';
+          notice.textContent = localSaved
+            ? `Saved locally; cloud profile sync failed${code}: ${err?.message || 'Supabase returned an error.'}`
+            : `Cloud profile sync and local save failed${code}: ${err?.message || 'Supabase returned an error.'}`;
+          return;
+        }
+      }
+
+      const localSaved = saveUserProfile(updated);
+      const notice = document.getElementById('accountSaveNotice');
+      notice.className = 'text-xs text-[#34D399]';
+      notice.textContent = currentAuthUser
+        ? `Display name saved to Supabase.${localSaved ? ' Billing preferences are saved on this device only.' : ' Billing preferences could not be saved in this browser.'}`
+        : (localSaved ? 'Saved on this device only. Sign in to sync your profile name to Supabase.' : 'Could not save account preferences in this browser.');
     }
 
     function closeModal(id) {
@@ -3673,6 +5022,7 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
+        closeCanvasContextMenu();
         closeProjectsPopover();
         closeColorPickerPopover();
         closeDeleteConfirmModal();
@@ -3680,12 +5030,51 @@
         closeModal('shareModal');
         closeModal('exportPdfModal');
         closeModal('accountModal');
+        return;
+      }
+
+      const target = e.target;
+      if (target instanceof Element && target.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (document.querySelector('.fixed.inset-0:not(.hidden)')) return;
+
+      const modifier = e.ctrlKey || e.metaKey;
+      const key = e.key.toLowerCase();
+      if (modifier && !e.altKey && key === 'z') {
+        if (e.shiftKey && redoHistory.length) {
+          e.preventDefault();
+          redoStudioChange();
+        } else if (!e.shiftKey && undoHistory.length) {
+          e.preventDefault();
+          undoStudioChange();
+        }
+        return;
+      }
+      if (modifier && !e.altKey && key === 'y' && redoHistory.length) {
+        e.preventDefault();
+        redoStudioChange();
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') &&
+          !modifier && !e.altKey &&
+          !document.getElementById('canvasContextMenu').classList.contains('hidden') &&
+          canvasContextTarget) {
+        e.preventDefault();
+        runCanvasContextAction(canvasContextTarget.type === 'project' ? 'delete-project' : 'move-to-bin');
+        return;
+      }
+      if (target instanceof Element && target.closest('button, a')) return;
+      if (!isReadOnlyMode && !modifier && !e.altKey &&
+          (e.key === 'Delete' || e.key === 'Backspace') && selectedCanvasItem) {
+        e.preventDefault();
+        deleteSelectedCanvasItem();
       }
     });
 
-    initUser();
+    updateAuthBadgeUI();
     initColorPickerInteractions();
+    initCanvasContextInteractions();
     renderStudio();
+    initStudioSession();
   </script>
 
 </body>

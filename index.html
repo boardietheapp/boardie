@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>boardie — Your Visual Bestie for Storyboards & Moodboards</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="bg-[#0A0A0A] text-[#E5E5E5] antialiased selection:bg-[#9333EA] selection:text-white">
@@ -27,7 +28,7 @@
         <a href="pricing.html" class="hover:text-[#E5E5E5] transition">Pricing</a>
       </div>
 
-      <div class="flex items-center gap-3">
+      <div id="headerAuthActions" class="flex items-center gap-3">
         <button onclick="openAuthDrawer('login')" class="text-sm text-neutral-300 hover:text-white px-3 py-2 transition">
           Log In
         </button>
@@ -35,6 +36,7 @@
           Start Free
         </button>
       </div>
+      <a id="headerStudioLink" href="studio.html" class="hidden text-sm font-semibold bg-[#9333EA] hover:bg-[#A855F7] text-white px-4 py-2 rounded-lg transition">Open Studio</a>
     </div>
   </nav>
 
@@ -244,6 +246,12 @@
               <circle cx="4" cy="4" r="2"></circle>
             </svg>
           </a>
+          <a href="#" aria-label="YouTube" title="YouTube (Coming Soon)" class="w-9 h-9 rounded-lg bg-[#171717] border border-[#262626] hover:border-red-500 text-neutral-400 hover:text-white flex items-center justify-center transition">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z"></path>
+              <polygon points="9.75 15.02 15.5 11.75 9.75 8.48 9.75 15.02"></polygon>
+            </svg>
+          </a>
         </div>
       </div>
 
@@ -255,8 +263,10 @@
           <li><a href="features.html" class="hover:text-[#E5E5E5] transition">Features</a></li>
           <li><a href="how-it-works.html" class="hover:text-[#E5E5E5] transition">How It Works</a></li>
           <li><a href="pricing.html" class="hover:text-[#E5E5E5] transition">Pricing</a></li>
-          <li><button onclick="openAuthDrawer('login')" class="hover:text-[#A855F7] transition">Log In to Studio</button></li>
-          <li><button onclick="openAuthDrawer('signup')" class="hover:text-[#34D399] transition">Create Free Account</button></li>
+          <li><a href="legal.html" class="hover:text-[#E5E5E5] transition">Legal</a></li>
+          <li id="footerLoginItem"><button onclick="openAuthDrawer('login')" class="hover:text-[#A855F7] transition">Log In to Studio</button></li>
+          <li id="footerSignupItem"><button onclick="openAuthDrawer('signup')" class="hover:text-[#34D399] transition">Create Free Account</button></li>
+          <li id="footerStudioItem" class="hidden"><a href="studio.html" class="hover:text-[#34D399] transition">Open Studio</a></li>
         </ul>
       </div>
 
@@ -560,49 +570,13 @@
       }
     }
 
-    function handleAuthSubmit(event) {
-      event.preventDefault();
-      const email = document.getElementById('authEmail').value.trim();
-      const nameInput = document.getElementById('authName').value.trim();
-      const roleInput = document.getElementById('authRole').value;
-
-      // Save user profile session locally so studio.html recognizes them
-      const existingUser = JSON.parse(localStorage.getItem('boardie_user') || 'null');
-      const userProfile = {
-        name: currentAuthMode === 'signup' ? nameInput : (existingUser?.name || email.split('@')[0]),
-        email: email,
-        role: currentAuthMode === 'signup' ? roleInput : (existingUser?.role || 'Creator'),
-        loggedInAt: new Date().toISOString()
-      };
-
-      localStorage.setItem('boardie_user', JSON.stringify(userProfile));
-      window.location.href = 'studio.html';
-    }
-
-    function handleNewsletterSubmit(event) {
-      event.preventDefault();
-      const nameInput = document.getElementById('newsletterName');
-      const emailInput = document.getElementById('newsletterEmail');
-      const msg = document.getElementById('newsletterMessage');
-
-      const name = nameInput.value.trim();
-      const email = emailInput.value.trim();
-
-      if (email) {
-        msg.textContent = name
-          ? `You're on the list, ${name}! We'll send updates to ${email}.`
-          : `You're on the list! We'll send updates to ${email}.`;
-        msg.classList.remove('hidden');
-        nameInput.value = '';
-        emailInput.value = '';
-      }
-    }
-
     // Close drawer with Escape key
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeAuthDrawer();
     });
   </script>
+  <script src="assets/supabase-auth.js"></script>
+  <script src="assets/supabase-newsletter.js"></script>
 
 </body>
 </html>
